@@ -27,8 +27,8 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/pulse-monitor/pulse"
-Repository = "https://github.com/pulse-monitor/pulse"
+Homepage = "https://github.com/Fatin-Ishraq/Pulse"
+Repository = "https://github.com/Fatin-Ishraq/Pulse.git"
 
 [project.scripts]
 pulse = "pulse.app:main"
