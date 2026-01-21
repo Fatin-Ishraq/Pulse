@@ -95,8 +95,8 @@ class ProcessPanel(Panel):
     def update_data(self):
         procs = []
         
-        # Try Rust Core first
-        rust_data = core.get_process_list(lambda: None)
+        # Try Rust Core first with Sorting
+        rust_data = core.get_process_list(sort_by=self.sort_key, limit=60, fallback_func=lambda: None)
         
         if rust_data is not None:
             # Use Rust Data
@@ -121,12 +121,21 @@ class ProcessPanel(Panel):
                     'name': p.get('name', '?'),
                     'cpu': cpu,
                     'mem': mem,
-                    'pid': p.get('pid', 0)
+                    'pid': p.get('pid', 0),
+                    'username': p.get('username', '?'),
                 })
-        else:
-            # Fallback to psutil
-            try:
-                for p in psutil.process_iter(['name', 'cpu_percent', 'memory_percent', 'pid']):
+            
+            # Data is already sorted by Rust!
+            # Just slice for safety if needed, though limit=60 handles it.
+            self.last_procs = procs[:50]
+            top = procs[:4]
+            self.render_panel(top)
+            return
+
+        # Fallback to psutil (legacy slow path)
+        try:
+            for p in psutil.process_iter(['name', 'cpu_percent', 'memory_percent', 'pid']):
+
                     try:
                         # Filter out very low usage to speed up
                         entry = p.info

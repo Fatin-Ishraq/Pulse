@@ -2,8 +2,16 @@ from collections import deque
 import psutil
 from rich.text import Text
 
+from pulse import core
 from pulse.panels.base import Panel
 from pulse.ui_utils import value_to_spark
+
+class NetAdapter:
+    def __init__(self, d):
+        self.bytes_sent = d.get('bytes_sent', 0)
+        self.bytes_recv = d.get('bytes_recv', 0)
+        self.packets_sent = d.get('packets_sent', 0)
+        self.packets_recv = d.get('packets_recv', 0)
 
 class NetworkPanel(Panel):
     """Network upload/download activity."""
@@ -16,8 +24,9 @@ class NetworkPanel(Panel):
         super().__init__("NETWORK", "", id="net-panel")
         self.up_history = deque(maxlen=80) 
         self.down_history = deque(maxlen=80)
+        core.init()
         try:
-            self.last_net = psutil.net_io_counters()
+            self.last_net = self._get_net_io()
         except:
             self.last_net = None
             
@@ -26,10 +35,16 @@ class NetworkPanel(Panel):
         self.view_mode = "developer" # cinematic / developer
         self.scaling_mode = "auto" # auto / kb / mb
 
+    def _get_net_io(self):
+        data = core.get_network_stats(lambda: None)
+        if data and isinstance(data, dict):
+            return NetAdapter(data)
+        return psutil.net_io_counters()
+
     def action_optimize(self):
         """Reset network session counters."""
         try:
-            self.last_net = psutil.net_io_counters()
+            self.last_net = self._get_net_io()
             self.up_history.clear()
             self.down_history.clear()
             self.notify("Network Session Counters Reset", severity="information")
@@ -39,7 +54,7 @@ class NetworkPanel(Panel):
     
     def update_data(self):
         try:
-            current = psutil.net_io_counters()
+            current = self._get_net_io()
         except:
             return
 
@@ -48,8 +63,14 @@ class NetworkPanel(Panel):
             return
             
         # Calculate rates (bytes per second if interval is 1s, but we'll use delta)
-        sent_rate = (current.bytes_sent - self.last_net.bytes_sent) / 1024  # KB
-        recv_rate = (current.bytes_recv - self.last_net.bytes_recv) / 1024  # KB
+        # Note: If counters wrap or reset, we might get negative. Handle that?
+        bs = current.bytes_sent - self.last_net.bytes_sent
+        br = current.bytes_recv - self.last_net.bytes_recv
+        if bs < 0: bs = 0
+        if br < 0: br = 0
+        
+        sent_rate = bs / 1024  # KB
+        recv_rate = br / 1024  # KB
         self.last_net = current
         
         self.up_history.append(min(sent_rate, 1000)) # Cap for sparkline scaling
@@ -91,7 +112,7 @@ class NetworkPanel(Panel):
         """Immersive Network console with throughput pulses and interface mapping."""
         text = Text()
         try:
-            net = psutil.net_io_counters()
+            net = self._get_net_io()
             conns = psutil.net_connections(kind='inet')
         except:
             return Text("Network Telemetry Offline")
@@ -160,7 +181,7 @@ class NetworkPanel(Panel):
         text.append("🌐 NETWORK DIAGNOSTICS\n\n", style="bold")
         
         try:
-            net = psutil.net_io_counters()
+            net = self._get_net_io()
         except:
             return Text("Network telemetry unavailable")
             
