@@ -50,17 +50,14 @@ class MemoryPanel(Panel):
     
     def update_data(self):
         try:
-            data = core.get_memory_info(lambda: None)
-            if data and isinstance(data, dict):
-                mem = MemAdapter(data)
-                swap = MemAdapter(data, prefix="swap_")
-            else:
-                mem = psutil.virtual_memory()
-                swap = psutil.swap_memory()
+            # Get memory info from Direct OS engine
+            data = core.get_memory_info()
+            mem = MemAdapter(data)
+            swap = MemAdapter(data, prefix="swap_")
             used_gb = mem.used / (1024**3)
             total_gb = mem.total / (1024**3)
             pct = mem.percent
-        except:
+        except Exception:
             return
         
         text = Text()

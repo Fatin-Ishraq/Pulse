@@ -27,8 +27,8 @@ class CPUPanel(Panel):
         core.init()
     
     def update_data(self):
-        # Use core to get data (Rust or Polyfill)
-        percentages = core.get_cpu_percents(lambda: psutil.cpu_percent(percpu=True))
+        # Use Direct OS engine for CPU data
+        percentages = core.get_cpu_percents()
         
         # Store history
         for i, pct in enumerate(percentages):

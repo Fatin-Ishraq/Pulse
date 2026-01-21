@@ -95,61 +95,31 @@ class ProcessPanel(Panel):
     def update_data(self):
         procs = []
         
-        # Try Rust Core first
-        rust_data = core.get_process_list(lambda: None)
+        # Get process list from Direct OS engine
+        process_data = core.get_process_list(sort_by=self.sort_key, limit=60)
         
-        if rust_data is not None:
-            # Use Rust Data
-            # Note: We need total memory to calc %.
-            # For speed, we might estimate or fetch once.
-            total_mem = 0
-            try:
-                mem_inf = core.get_memory_info(lambda: None)
-                if mem_inf: total_mem = mem_inf.get('total', 0)
-            except: pass
-            if total_mem == 0: total_mem = 1 # avoid div zero
+        # Get total memory for percentage calculation
+        mem_info = core.get_memory_info()
+        total_mem = mem_info.get('total', 1) if mem_info else 1
+        
+        for p in process_data:
+            cpu = p.get('cpu_percent', 0)
+            mem_bytes = p.get('memory_info', 0)
+            mem = (mem_bytes / total_mem) * 100 if total_mem else 0
             
-            for p in rust_data:
-                cpu = p.get('cpu_percent', 0)
-                mem_bytes = p.get('memory_info', 0)
-                mem = (mem_bytes / total_mem) * 100
+            if cpu < 0.1 and mem < 0.1:
+                continue
                 
-                if cpu < 0.1 and mem < 0.1:
-                    continue
-                    
-                procs.append({
-                    'name': p.get('name', '?'),
-                    'cpu': cpu,
-                    'mem': mem,
-                    'pid': p.get('pid', 0)
-                })
-        else:
-            # Fallback to psutil
-            try:
-                for p in psutil.process_iter(['name', 'cpu_percent', 'memory_percent', 'pid']):
-                    try:
-                        # Filter out very low usage to speed up
-                        entry = p.info
-                        cpu = entry.get('cpu_percent') or 0
-                        mem = entry.get('memory_percent') or 0
-                        
-                        if cpu < 0.1 and mem < 0.1:
-                            continue
-                            
-                        procs.append({
-                            'name': entry.get('name') or '?',
-                            'cpu': cpu,
-                            'mem': mem,
-                            'pid': entry.get('pid') or 0,
-                        })
-                    except (psutil.NoSuchProcess, psutil.AccessDenied):
-                        pass
-            except:
-                pass
+            procs.append({
+                'name': p.get('name', '?'),
+                'cpu': cpu,
+                'mem': mem,
+                'pid': p.get('pid', 0)
+            })
         
         # Sort based on current mode
         procs.sort(key=lambda x: x[self.sort_key], reverse=True)
-        self.last_procs = procs[:50]  # Expanded list for detailed view
+        self.last_procs = procs[:50]
         top = procs[:4]
         
         self.render_panel(top)
