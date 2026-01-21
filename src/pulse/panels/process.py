@@ -135,26 +135,25 @@ class ProcessPanel(Panel):
         # Fallback to psutil (legacy slow path)
         try:
             for p in psutil.process_iter(['name', 'cpu_percent', 'memory_percent', 'pid']):
-
-                    try:
-                        # Filter out very low usage to speed up
-                        entry = p.info
-                        cpu = entry.get('cpu_percent') or 0
-                        mem = entry.get('memory_percent') or 0
+                try:
+                    # Filter out very low usage to speed up
+                    entry = p.info
+                    cpu = entry.get('cpu_percent') or 0
+                    mem = entry.get('memory_percent') or 0
+                    
+                    if cpu < 0.1 and mem < 0.1:
+                        continue
                         
-                        if cpu < 0.1 and mem < 0.1:
-                            continue
-                            
-                        procs.append({
-                            'name': entry.get('name') or '?',
-                            'cpu': cpu,
-                            'mem': mem,
-                            'pid': entry.get('pid') or 0,
-                        })
-                    except (psutil.NoSuchProcess, psutil.AccessDenied):
-                        pass
-            except:
-                pass
+                    procs.append({
+                        'name': entry.get('name') or '?',
+                        'cpu': cpu,
+                        'mem': mem,
+                        'pid': entry.get('pid') or 0,
+                    })
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
+        except:
+            pass
         
         # Sort based on current mode
         procs.sort(key=lambda x: x[self.sort_key], reverse=True)
