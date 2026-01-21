@@ -14,20 +14,22 @@
 
 ## 🚀 Installation
 
-### via PyPI
+### From Source (Hybrid Core)
+The core engine leverages **Rust** for maximum performance. To build from source, you need the [Rust Toolchain](https://rustup.rs/) and [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) installed.
+
+```bash
+git clone https://github.com/Fatin-Ishraq/Pulse.git
+cd Pulse
+pip install .
+```
+
+### via PyPI (Stable)
 ```bash
 pip install pulse-monitor
 ```
 
-### from Source
-The core engine is written in Rust for performance. You need Rust/Cargo installed.
-
-```bash
-git clone https://github.com/pulse-monitor/pulse.git
-cd pulse
-pip install maturin
-maturin develop
-```
+> [!NOTE]
+> If Rust or Build Tools are missing, Pulse will automatically fallback to the pure-Python engine (`psutil`). It will remain fully functional, just slightly less optimized.
 
 ## 🎮 Navigation & Controls
 
