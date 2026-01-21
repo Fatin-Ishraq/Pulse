@@ -2,6 +2,7 @@ import platform
 import psutil
 from rich.text import Text
 
+from pulse import core
 from pulse.panels.base import Panel
 from pulse.ui_utils import value_to_heat_color, make_bar
 
