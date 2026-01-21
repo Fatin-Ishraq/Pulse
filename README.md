@@ -14,27 +14,34 @@
 
 ## 🚀 Installation
 
-### Automated Optimal Experience (Recommended)
-Pulse automatically builds high-performance binaries for **Windows, Linux, and macOS**. To get the most optimal experience:
+### Full Potential (Recommended)
+Get the **maximum performance** Rust engine automatically, no build tools required:
 
-1.  **Clone the Repo**: `git clone https://github.com/Fatin-Ishraq/Pulse.git`
-2.  **Pull Native Engine**: Pulse will automatically detect and use pre-compiled binaries from the GitHub Actions builds.
-3.  **Install & Run**:
-    ```bash
-    pip install .
-    python -m pulse
-    ```
+```bash
+git clone https://github.com/Fatin-Ishraq/Pulse.git
+cd Pulse
+
+# Linux/Mac
+chmod +x install.sh && ./install.sh
+
+# Windows (PowerShell or CMD)
+install.bat
+```
+
+Then run:
+```bash
+python -m pulse
+```
 
 ### From Source (For Contributors)
-If you want to compile the Rust core manually, you'll need the [Rust Toolchain](https://rustup.rs/) and [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/).
-
-### via PyPI (Stable)
+If you have Rust installed and want to compile locally:
 ```bash
-pip install pulse-monitor
+pip install .
+python -m pulse
 ```
 
 > [!NOTE]
-> If Rust or Build Tools are missing, Pulse will automatically fallback to the pure-Python engine (`psutil`). It will remain fully functional, just slightly less optimized.
+> The bootstrap script automatically downloads pre-compiled binaries from GitHub Releases. If none are available for your system, it falls back to compiling from source.
 
 ## 🎮 Navigation & Controls
 
