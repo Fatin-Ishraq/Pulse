@@ -2,7 +2,7 @@ from textual.screen import Screen
 from textual.containers import Container, Horizontal
 from textual.widgets import Static, Button
 
-from pulse.state import current_theme
+
 
 class ImmersiveScreen(Screen):
     """Fullscreen high-density telemetry console with interactive controls."""
@@ -62,8 +62,10 @@ class ImmersiveScreen(Screen):
                 yield Button("BACK [X]", id="btn-back", variant="error")
             
     def on_mount(self):
-        self.styles.background = "black"
+        self.screen.styles.background = "transparent"
         
+        # Container style
+        self.styles.align = ("center", "middle")
         # Hide buttons based on panel capabilities
         self.query_one("#btn-mode").visible = hasattr(self.source_panel, "view_mode")
         self.query_one("#btn-rate").visible = hasattr(self.source_panel, "sampling_rate")
@@ -116,7 +118,7 @@ class ImmersiveScreen(Screen):
     def refresh_view(self):
         try:
             content = self.query_one("#transcendence-content", Static)
-            console = self.query_one("#hero-console")
+            # console = self.query_one("#hero-console") # No longer used for styling
         except:
             return
         
@@ -124,9 +126,10 @@ class ImmersiveScreen(Screen):
         # if the rate is different from the main app.
         if hasattr(self.source_panel, "sampling_rate") and self.source_panel.sampling_rate < 1.0:
             self.source_panel.update_data()
-            
-        # Sync color from theme
-        console.styles.border = ("thick", current_theme["focus"])
+        
+        container_style = self.query_one("#hero-console").styles
+        container_style.border = ("thick", "cyan")
+        container_style.background = "transparent"
         
         if hasattr(self.source_panel, "get_transcendence_view"):
             text = self.source_panel.get_transcendence_view()

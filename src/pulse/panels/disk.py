@@ -3,7 +3,6 @@ import psutil
 from rich.text import Text
 
 from pulse.panels.base import Panel
-from pulse.state import current_theme
 from pulse.ui_utils import value_to_spark, value_to_heat_color, make_bar
 
 class DiskIOPanel(Panel):
@@ -57,21 +56,21 @@ class DiskIOPanel(Panel):
         
         text = Text()
         # Summary with throughput + sparks
-        text.append("R ", style=current_theme["read"])
+        text.append("R ", style="cyan")
         text.append(f"{read_rate:4.1f}MB/s ", style="dim")
         for val in list(self.read_history)[-15:]:
-            text.append(value_to_spark(val), style=current_theme["read"])
+            text.append(value_to_spark(val), style="cyan")
         
         # Latencies in summary
-        lat_color_r = value_to_heat_color(self.current_read_lat * 2, current_theme["heat"])
+        lat_color_r = value_to_heat_color(self.current_read_lat * 2)
         text.append(f"\n   {self.current_read_lat:4.1f}ms  ", style=lat_color_r)
         
-        text.append("\nW ", style=current_theme["write"])
+        text.append("\nW ", style="yellow")
         text.append(f"{write_rate:4.1f}MB/s ", style="dim")
         for val in list(self.write_history)[-15:]:
-            text.append(value_to_spark(val), style=current_theme["write"])
+            text.append(value_to_spark(val), style="yellow")
             
-        lat_color_w = value_to_heat_color(self.current_write_lat * 2, current_theme["heat"])
+        lat_color_w = value_to_heat_color(self.current_write_lat * 2)
         text.append(f"\n   {self.current_write_lat:4.1f}ms  ", style=lat_color_w)
         
         self.update(text)
@@ -87,10 +86,10 @@ class DiskIOPanel(Panel):
 
         # --- HERO HEADER ---
         text.append(f"DISK FLOW ANALYTICS ", style="bold")
-        text.append(f"[{self.view_mode.upper()} MODE]\n", style=current_theme["focus"])
+        text.append(f"[{self.view_mode.upper()} MODE]\n", style="cyan")
         
-        rlat_style = value_to_heat_color(self.current_read_lat * 2, current_theme["heat"])
-        wlat_style = value_to_heat_color(self.current_write_lat * 2, current_theme["heat"])
+        rlat_style = value_to_heat_color(self.current_read_lat * 2)
+        wlat_style = value_to_heat_color(self.current_write_lat * 2)
         
         text.append(f"READ LATENCY:  {self.current_read_lat:6.2f} ms ", style=rlat_style)
         text.append(make_bar(min(self.current_read_lat, 50), 50, 20), style=rlat_style)
@@ -101,29 +100,29 @@ class DiskIOPanel(Panel):
 
         if self.view_mode == "cinematic":
             # Massive Waveform Focus
-            text.append("\nREAD THROUGHPUT (80s)\n", style=current_theme["read"])
+            text.append("\nREAD THROUGHPUT (80s)\n", style="cyan")
             for val in self.read_history:
-                text.append(value_to_spark(val), style=current_theme["read"])
+                text.append(value_to_spark(val), style="cyan")
             
-            text.append("\n\nWRITE THROUGHPUT (80s)\n", style=current_theme["write"])
+            text.append("\n\nWRITE THROUGHPUT (80s)\n", style="yellow")
             for val in self.write_history:
-                text.append(value_to_spark(val), style=current_theme["write"])
+                text.append(value_to_spark(val), style="yellow")
                 
-            text.append("\n\nI/O OPERATIONS (Total)\n", style=current_theme["accent"])
+            text.append("\n\nI/O OPERATIONS (Total)\n", style="cyan")
             text.append(f"  READS:  {io.read_count:,}    WRITES: {io.write_count:,}\n", style="dim")
         else:
             # Developer Focus: Per-Disk Matrix
             text.append("\n80s I/O PULSE: ", style="dim")
             for r, w in zip(list(self.read_history)[-30:], list(self.write_history)[-30:]):
-                text.append("R" if r > w else "W", style=current_theme["read"] if r > w else current_theme["write"])
+                text.append("R" if r > w else "W", style="cyan" if r > w else "yellow")
             
-            text.append("\n\nDRIVE ACTIVITY MATRIX\n", style=current_theme["accent"])
+            text.append("\n\nDRIVE ACTIVITY MATRIX\n", style="cyan")
             text.append(f"{'DISK':<12} {'READ':<10} {'WRITE':<10} {'BUSY%'}\n", style="dim")
             text.append("─" * 45 + "\n", style="dim")
             for disk, d_io in per_disk.items():
-                text.append(f"  {disk:<10} ", style=current_theme["accent"])
-                text.append(f"{d_io.read_bytes/(1024**2):>6.1f}MB ", style=current_theme["read"])
-                text.append(f"{d_io.write_bytes/(1024**2):>6.1f}MB ", style=current_theme["write"])
+                text.append(f"  {disk:<10} ", style="cyan")
+                text.append(f"{d_io.read_bytes/(1024**2):>6.1f}MB ", style="cyan")
+                text.append(f"{d_io.write_bytes/(1024**2):>6.1f}MB ", style="yellow")
                 # Busy time is only on some systems
                 if hasattr(d_io, 'busy_time'):
                     text.append(f" {d_io.busy_time/1000:>6.1f}s", style="dim")
@@ -142,19 +141,19 @@ class DiskIOPanel(Panel):
             return Text("Disk telemetry unavailable")
         
         # Waveforms
-        text.append("Throughput Waves (Last 40s)\n", style=current_theme["accent"])
-        text.append("  READ  ", style=current_theme["read"])
+        text.append("Throughput Waves (Last 40s)\n", style="cyan")
+        text.append("  READ  ", style="cyan")
         for val in list(self.read_history)[-40:]:
-            text.append(value_to_spark(val), style=current_theme["read"])
-        text.append("\n  WRITE ", style=current_theme["write"])
+            text.append(value_to_spark(val), style="cyan")
+        text.append("\n  WRITE ", style="yellow")
         for val in list(self.write_history)[-40:]:
-            text.append(value_to_spark(val), style=current_theme["write"])
+            text.append(value_to_spark(val), style="yellow")
         text.append("\n\n")
 
         # Response Latency Map
-        text.append("Response Latency Map\n", style=current_theme["accent"])
-        lat_r_style = value_to_heat_color(self.current_read_lat * 2, current_theme["heat"])
-        lat_w_style = value_to_heat_color(self.current_write_lat * 2, current_theme["heat"])
+        text.append("Response Latency Map\n", style="cyan")
+        lat_r_style = value_to_heat_color(self.current_read_lat * 2)
+        lat_w_style = value_to_heat_color(self.current_write_lat * 2)
         
         text.append(f"  READ  [", style="dim")
         text.append(f"{self.current_read_lat:6.2f} ms", style=lat_r_style)
@@ -164,7 +163,7 @@ class DiskIOPanel(Panel):
         text.append(f"{self.current_write_lat:6.2f} ms", style=lat_w_style)
         text.append("] " + make_bar(min(self.current_write_lat, 50), 50, 15) + "\n", style=lat_w_style)
 
-        text.append("\nSession Stats\n", style=current_theme["accent"])
+        text.append("\nSession Stats\n", style="cyan")
         text.append(f"  Total Data: Read {io.read_bytes/(1024**3):.2f}GB / Write {io.write_bytes/(1024**3):.2f}GB\n", style="dim")
         
         return text

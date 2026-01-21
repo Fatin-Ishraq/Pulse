@@ -2,7 +2,7 @@ from textual.screen import ModalScreen
 from textual.containers import Container
 from textual.widgets import Markdown
 
-from pulse.state import current_theme
+
 
 class HelpScreen(ModalScreen):
     """Modal help screen overlay."""
@@ -23,10 +23,10 @@ class HelpScreen(ModalScreen):
     def on_mount(self):
         """Apply theme to modal."""
         container = self.query_one("#help-container")
-        container.styles.border = ("heavy", current_theme["focus"])
-        container.styles.background = current_theme["bg"]
-        container.styles.color = current_theme["accent"]
-        self.query_one(Markdown).styles.color = current_theme["accent"]
+        container.styles.border = ("heavy", "cyan")
+        container.styles.background = "black"
+        container.styles.color = "white"
+        self.query_one(Markdown).styles.color = "cyan"
     
     def compose(self):
         help_md = """

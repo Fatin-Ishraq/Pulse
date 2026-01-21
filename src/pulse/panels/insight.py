@@ -4,7 +4,6 @@ import psutil
 from rich.text import Text
 
 from pulse.panels.base import Panel
-from pulse.state import current_theme
 from pulse.ui_utils import value_to_spark, value_to_heat_color, make_bar
 
 class InsightPanel(Panel):
@@ -45,11 +44,11 @@ class InsightPanel(Panel):
         """Ultimate Heuristic Insight Engine."""
         text = Text()
         text.append(f"NEURAL INSIGHT ENGINE ", style="bold")
-        text.append(f"[{self.view_mode.upper()} MODE]\n", style=current_theme["focus"])
+        text.append(f"[{self.view_mode.upper()} MODE]\n", style="cyan")
         
         if self.view_mode == "cinematic":
             # Heuristic "AI" thought process
-            text.append("\nLIVE BOTTLENECK INFERENCE\n", style=current_theme["accent"])
+            text.append("\nLIVE BOTTLENECK INFERENCE\n", style="cyan")
             
             # Simulated neural activity
             thought = self.thoughts[self.thought_idx % len(self.thoughts)]
@@ -62,11 +61,11 @@ class InsightPanel(Panel):
             mem = psutil.virtual_memory().percent
             
             text.append("\nSUBSYSTEM HEALTH MATRIX\n", style="dim")
-            text.append(f"  COMPUTE: {make_bar(cpu, 100, 20)} {cpu:>3.0f}%\n", style=value_to_heat_color(cpu, current_theme["heat"]))
-            text.append(f"  MEMORY:  {make_bar(mem, 100, 20)} {mem:>3.0f}%\n", style=value_to_heat_color(mem, current_theme["heat"]))
+            text.append(f"  COMPUTE: {make_bar(cpu, 100, 20)} {cpu:>3.0f}%\n", style=value_to_heat_color(cpu))
+            text.append(f"  MEMORY:  {make_bar(mem, 100, 20)} {mem:>3.0f}%\n", style=value_to_heat_color(mem))
 
             # Bottleneck Recommendation
-            text.append("\nENGINE RECOMMENDATION\n", style=current_theme["accent"])
+            text.append("\nENGINE RECOMMENDATION\n", style="cyan")
             if cpu > 80:
                 text.append("  [!] Critical compute saturation. Consider offloading background tasks.\n", style="orange1")
             elif mem > 90:
@@ -75,20 +74,20 @@ class InsightPanel(Panel):
                 text.append("  [✓] All subsystems operating at peak efficiency.\n", style="green")
         else:
             # Developer Mode: Session Statistics
-            text.append("\nSESSION PEAK METRICS\n", style=current_theme["accent"])
+            text.append("\nSESSION PEAK METRICS\n", style="cyan")
             text.append(f"  CPU Peak:        {self.peaks['cpu']:>5.1f}%\n", style="cyan")
             text.append(f"  Memory Peak:     {self.peaks['mem']:>5.1f}%\n", style="cyan")
             
             runtime = datetime.now() - self.start_time
             text.append(f"  Session Time:    {str(runtime).split('.')[0]}\n", style="dim")
             
-            text.append("\nNEURAL NETWORK TOPOLOGY\n", style=current_theme["accent"])
+            text.append("\nNEURAL NETWORK TOPOLOGY\n", style="cyan")
             text.append("  Tension Pulse Trace (80 samples)\n", style="dim")
             for val in list(self.history):
-                text.append(value_to_spark(val), style=value_to_heat_color(val, current_theme["heat"]))
+                text.append(value_to_spark(val), style=value_to_heat_color(val))
             text.append("\n")
             
-            text.append("\nHEURISTIC WEIGHTS\n", style=current_theme["accent"])
+            text.append("\nHEURISTIC WEIGHTS\n", style="cyan")
             text.append("  Compute Importance: 40%\n", style="dim")
             text.append("  Memory Weight:     40%\n", style="dim")
             text.append("  I/O Bias:          20%\n", style="dim")
@@ -112,7 +111,7 @@ class InsightPanel(Panel):
         self.history.append(self.tension_score)
         
         text = Text()
-        color = value_to_heat_color(self.tension_score, current_theme["heat"])
+        color = value_to_heat_color(self.tension_score)
         
         # Summary View
         text.append("TENSION: ", style="dim")
@@ -138,13 +137,13 @@ class InsightPanel(Panel):
         text.append("🧠 SYSTEM INTELLIGENCE\n\n", style="bold")
         
         # Tension Waveform
-        text.append("Session Tension Pulse (Last 40s)\n", style=current_theme["accent"])
+        text.append("Session Tension Pulse (Last 40s)\n", style="cyan")
         for val in self.history:
-            text.append(value_to_spark(val), style=value_to_heat_color(val, current_theme["heat"]))
-        text.append(f" {self.tension_score:.0f}%\n\n", style=value_to_heat_color(self.tension_score, current_theme["heat"]))
+            text.append(value_to_spark(val), style=value_to_heat_color(val))
+        text.append(f" {self.tension_score:.0f}%\n\n", style=value_to_heat_color(self.tension_score))
 
         # System Strains
-        text.append("Primary Resource Strains\n", style=current_theme["accent"])
+        text.append("Primary Resource Strains\n", style="cyan")
         try:
             cpu = psutil.cpu_percent()
             mem = psutil.virtual_memory().percent
@@ -163,7 +162,7 @@ class InsightPanel(Panel):
             text.append("  [✓] All subsystems operating within nominal range.\n", style="green")
 
         # Session Peaks
-        text.append("\nSession Peaks\n", style=current_theme["accent"])
+        text.append("\nSession Peaks\n", style="cyan")
         text.append(f"  CPU Peak:    {self.peaks['cpu']:5.1f}%\n", style="dim")
         text.append(f"  Memory Peak: {self.peaks['mem']:5.1f}%\n", style="dim")
         

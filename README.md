@@ -20,10 +20,13 @@ pip install pulse-monitor
 ```
 
 ### from Source
+The core engine is written in Rust for performance. You need Rust/Cargo installed.
+
 ```bash
 git clone https://github.com/pulse-monitor/pulse.git
 cd pulse
-pip install -e .
+pip install maturin
+maturin develop
 ```
 
 ## 🎮 Navigation & Controls

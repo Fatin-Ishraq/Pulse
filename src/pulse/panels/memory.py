@@ -2,9 +2,18 @@ from collections import deque
 import psutil
 from rich.text import Text
 
+from pulse import core
 from pulse.panels.base import Panel
-from pulse.state import current_theme
 from pulse.ui_utils import value_to_spark, value_to_heat_color
+
+# Adapter for Rust dict to psutil-like object
+class MemAdapter:
+    def __init__(self, d, prefix=""):
+        self.total = d.get(f"{prefix}total", 0)
+        self.used = d.get(f"{prefix}used", 0)
+        self.free = d.get(f"{prefix}free", 0)
+        self.available = d.get("available", 0)
+        self.percent = (self.used / self.total * 100) if self.total > 0 else 0
 
 class MemoryPanel(Panel):
     """Shows memory usage as a live pressure bar."""
@@ -23,6 +32,8 @@ class MemoryPanel(Panel):
         self.sampling_rate = 1.0
         self.view_mode = "developer" # cinematic / developer
         self.scaling_mode = "absolute" # absolute / relative
+        
+        core.init()
 
     def action_optimize(self):
         """Simulate memory optimization/cache flush."""
@@ -39,7 +50,13 @@ class MemoryPanel(Panel):
     
     def update_data(self):
         try:
-            mem = psutil.virtual_memory()
+            data = core.get_memory_info(lambda: None)
+            if data and isinstance(data, dict):
+                mem = MemAdapter(data)
+                swap = MemAdapter(data, prefix="swap_")
+            else:
+                mem = psutil.virtual_memory()
+                swap = psutil.swap_memory()
             used_gb = mem.used / (1024**3)
             total_gb = mem.total / (1024**3)
             pct = mem.percent
@@ -47,10 +64,10 @@ class MemoryPanel(Panel):
             return
         
         text = Text()
-        text.append("MEM ", style=current_theme["accent"])
+        text.append("MEM ", style="cyan")
         bar_width = 12
         filled = int(pct / 100 * bar_width)
-        color = value_to_heat_color(pct, current_theme["heat"])
+        color = value_to_heat_color(pct)
         
         self.history.append(pct)
         
@@ -62,8 +79,8 @@ class MemoryPanel(Panel):
         # Critical Alert
         if pct > 95:
             self.add_class("alarm")
-            self.styles.border = ("heavy", current_theme["alarm"])
-            self.styles.color = current_theme["alarm"]
+            self.styles.border = ("heavy", "red")
+            self.styles.color = "red"
             self.border_title = "MEM CRITICAL"
         else:
             self.remove_class("alarm")
@@ -83,12 +100,12 @@ class MemoryPanel(Panel):
         except:
             return Text("Memory Telemetry Offline")
 
-        color = value_to_heat_color(mem.percent, current_theme["heat"])
+        color = value_to_heat_color(mem.percent)
         from pulse.ui_utils import make_bar
 
         # --- HERO HEADER ---
         text.append(f"MEMORY DEPTH ANALYTICS ", style="bold")
-        text.append(f"[{self.view_mode.upper()} MODE]\n", style=current_theme["focus"])
+        text.append(f"[{self.view_mode.upper()} MODE]\n", style="cyan")
         
         text.append(f"PRESSURE: {mem.percent:3.0f}% ", style=color)
         text.append(make_bar(mem.percent, 100, 20), style=color)
@@ -96,11 +113,11 @@ class MemoryPanel(Panel):
         
         if self.view_mode == "cinematic":
             # Massive Waveform Focus
-            text.append("\nPRESSURE WAVEFORM (80s)\n", style=current_theme["accent"])
+            text.append("\nPRESSURE WAVEFORM (80s)\n", style="cyan")
             for val in self.history:
-                text.append(value_to_spark(val), style=value_to_heat_color(val, current_theme["heat"]))
+                text.append(value_to_spark(val), style=value_to_heat_color(val))
             
-            text.append("\n\nALLOCATION LANDSCAPE\n", style=current_theme["accent"])
+            text.append("\n\nALLOCATION LANDSCAPE\n", style="cyan")
             # Visual layout of physical vs swap
             total_vol = mem.total + swap.total
             phys_ratio = int((mem.used / total_vol) * 40)
@@ -108,7 +125,7 @@ class MemoryPanel(Panel):
             free_ratio = 40 - phys_ratio - swap_ratio
             
             text.append("PHYS [", style="dim")
-            text.append("█" * phys_ratio, style=current_theme["focus"])
+            text.append("█" * phys_ratio, style="cyan")
             text.append("] SWAP [", style="dim")
             text.append("▓" * swap_ratio, style="yellow")
             text.append("] FREE [", style="dim")
@@ -118,9 +135,9 @@ class MemoryPanel(Panel):
             # Developer Focus: Detailed Subsystems
             text.append("\n80s PRESSURE: ", style="dim")
             for val in list(self.history)[-30:]:
-                text.append(value_to_spark(val), style=value_to_heat_color(val, current_theme["heat"]))
+                text.append(value_to_spark(val), style=value_to_heat_color(val))
             
-            text.append("\n\nSUBSYSTEM BREAKDOWN\n", style=current_theme["accent"])
+            text.append("\n\nSUBSYSTEM BREAKDOWN\n", style="cyan")
             
             # Cross-platform safe breakdown
             data = [
@@ -137,9 +154,9 @@ class MemoryPanel(Panel):
             
             for label, val in data:
                 text.append(f"  {label:<20} ", style="dim")
-                text.append(f"{val:>12}\n", style=current_theme["focus"])
+                text.append(f"{val:>12}\n", style="cyan")
                 
-            text.append("\nSWAP & PAGING\n", style=current_theme["accent"])
+            text.append("\nSWAP & PAGING\n", style="cyan")
             text.append(f"  Swap Used:    {swap.used/(1024**3):6.2f} GB / {swap.total/(1024**3):.2f} GB\n", style="dim")
             
             try:
@@ -164,10 +181,10 @@ class MemoryPanel(Panel):
             return Text("Memory telemetry unavailable")
         
         # Pressure Waveform
-        text.append("Pressure Waveform (Last 40s)\n", style=current_theme["accent"])
+        text.append("Pressure Waveform (Last 40s)\n", style="cyan")
         for val in list(self.history)[-40:]:
-            text.append(value_to_spark(val), style=value_to_heat_color(val, current_theme["heat"]))
-        text.append(f" {mem.percent:.0f}%\n\n", style=value_to_heat_color(mem.percent, current_theme["heat"]))
+            text.append(value_to_spark(val), style=value_to_heat_color(val))
+        text.append(f" {mem.percent:.0f}%\n\n", style=value_to_heat_color(mem.percent))
 
         # Status Table
         text.append(f"{'TYPE':<12} {'TOTAL':<10} {'USED':<10} {'FREE':<10}\n", style="dim")
@@ -176,12 +193,12 @@ class MemoryPanel(Panel):
         text.append(f"{'Swap':<12} {swap.total/(1024**3):.1f}GB    {swap.used/(1024**3):.1f}GB    {swap.free/(1024**3):.1f}GB\n\n")
 
         # Allocation Map
-        text.append("Allocation Map\n", style=current_theme["accent"])
+        text.append("Allocation Map\n", style="cyan")
         total = mem.total
         # Segments: Used, Available
         used_p = int((mem.used / total) * 30)
         avail_p = 30 - used_p
-        text.append("[" + "█"*used_p + "▒"*avail_p + "]\n", style=current_theme["focus"])
+        text.append("[" + "█"*used_p + "▒"*avail_p + "]\n", style="cyan")
         text.append(f"  {'Used':<8} {mem.used/(1024**3):.1f}GB\n", style="dim")
         text.append(f"  {'Avail':<8} {mem.available/(1024**3):.1f}GB\n", style="dim")
 

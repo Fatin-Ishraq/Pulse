@@ -3,7 +3,6 @@ import psutil
 from rich.text import Text
 
 from pulse.panels.base import Panel
-from pulse.state import current_theme
 from pulse.ui_utils import value_to_heat_color, make_bar
 
 class MainViewPanel(Panel):
@@ -38,16 +37,16 @@ class MainViewPanel(Panel):
         
         text = Text()
         text.append("CPU  ", style="bold")
-        text.append(f"{cpu:5.1f}%  ", style=value_to_heat_color(cpu, current_theme["heat"]))
-        text.append(make_bar(cpu, 100, 10) + "\n", style=value_to_heat_color(cpu, current_theme["heat"]))
+        text.append(f"{cpu:5.1f}%  ", style=value_to_heat_color(cpu))
+        text.append(make_bar(cpu, 100, 10) + "\n", style=value_to_heat_color(cpu))
         
         text.append("RAM  ", style="bold")
-        text.append(f"{mem.percent:5.1f}%  ", style=value_to_heat_color(mem.percent, current_theme["heat"]))
-        text.append(make_bar(mem.percent, 100, 10) + "\n", style=value_to_heat_color(mem.percent, current_theme["heat"]))
+        text.append(f"{mem.percent:5.1f}%  ", style=value_to_heat_color(mem.percent))
+        text.append(make_bar(mem.percent, 100, 10) + "\n", style=value_to_heat_color(mem.percent))
         
         text.append("DISK ", style="bold")
-        text.append(f"{disk.percent:5.1f}%  ", style=value_to_heat_color(disk.percent, current_theme["heat"]))
-        text.append(make_bar(disk.percent, 100, 10) + "\n", style=value_to_heat_color(disk.percent, current_theme["heat"]))
+        text.append(f"{disk.percent:5.1f}%  ", style=value_to_heat_color(disk.percent))
+        text.append(make_bar(disk.percent, 100, 10) + "\n", style=value_to_heat_color(disk.percent))
         
         text.append(f"\n⏱ Up {hours}h {mins}m", style="dim")
         self.update(text)

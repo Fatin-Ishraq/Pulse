@@ -2,7 +2,6 @@ import psutil
 from rich.text import Text
 
 from pulse.panels.base import Panel
-from pulse.state import current_theme
 from pulse.ui_utils import value_to_heat_color, make_bar
 
 class KernelThermalPanel(Panel):
@@ -25,7 +24,7 @@ class KernelThermalPanel(Panel):
         """Ultimate Kernel & Thermal Analytics."""
         text = Text()
         text.append(f"KERNEL PULSE ", style="bold")
-        text.append(f"[{self.view_mode.upper()} MODE]\n", style=current_theme["focus"])
+        text.append(f"[{self.view_mode.upper()} MODE]\n", style="cyan")
         
         try:
             boot_time = psutil.boot_time()
@@ -34,13 +33,13 @@ class KernelThermalPanel(Panel):
             text.append(f"UPTIME: {str(uptime).split('.')[0]}\n", style="dim")
             
             if self.view_mode == "cinematic":
-                text.append("\nTHERMAL GRADIENT MAP\n", style=current_theme["accent"])
+                text.append("\nTHERMAL GRADIENT MAP\n", style="cyan")
                 try:
                     temps = psutil.sensors_temperatures()
                     if temps:
                         for name, entries in temps.items():
                             for e in entries:
-                                color = value_to_heat_color(e.current, current_theme["heat"])
+                                color = value_to_heat_color(e.current)
                                 text.append(f"{name[:10]:<10} {e.label or 'Core'[:10]:<10} ", style="dim")
                                 text.append(make_bar(e.current, 100, 30), style=color)
                                 text.append(f" {e.current:.1f}°C\n", style=color)
@@ -50,7 +49,7 @@ class KernelThermalPanel(Panel):
                     text.append("(Thermal API Access Denied)\n", style="red")
             else:
                 # Developer Mode: Raw Kernel Events & System Info
-                text.append("\nKERNEL EVENT ANALYTICS\n", style=current_theme["accent"])
+                text.append("\nKERNEL EVENT ANALYTICS\n", style="cyan")
                 try:
                     stats = psutil.cpu_stats()
                     text.append(f"{'METRIC':<20} {'RAW VALUE':<15}\n", style="dim")
@@ -61,7 +60,7 @@ class KernelThermalPanel(Panel):
                     text.append(f"{'Syscalls':<20} {stats.syscalls:,}\n", style="cyan")
                 except: pass
                 
-                text.append("\nFAN SPEED SENSORS\n", style=current_theme["accent"])
+                text.append("\nFAN SPEED SENSORS\n", style="cyan")
                 try:
                     fans = psutil.sensors_fans()
                     if fans:
@@ -73,7 +72,7 @@ class KernelThermalPanel(Panel):
                 except:
                     text.append("  (Fan API Access Denied)\n", style="red")
                 
-                text.append("\nSYSTEM PLATFORM\n", style=current_theme["accent"])
+                text.append("\nSYSTEM PLATFORM\n", style="cyan")
                 import platform
                 text.append(f"  OS:      {platform.system()} {platform.release()}\n", style="dim")
                 text.append(f"  VERSION: {platform.version()[:50]}...\n", style="dim")
@@ -106,7 +105,7 @@ class KernelThermalPanel(Panel):
             if temps:
                 key = next(iter(temps))
                 t = temps[key][0].current
-                color = value_to_heat_color(t, current_theme["heat"])
+                color = value_to_heat_color(t)
                 text.append(f"THERM: {t:.1f}°C\n", style=color)
             else:
                 text.append("THERM: [N/A]\n", style="dim")
@@ -114,7 +113,7 @@ class KernelThermalPanel(Panel):
             text.append("THERM: LOCKED\n", style="dim")
             
         # Kernel summary
-        text.append(f"CTX:   {ctx_switches/1000:4.1f}k/s\n", style=current_theme["accent"])
+        text.append(f"CTX:   {ctx_switches/1000:4.1f}k/s\n", style="cyan")
         text.append(f"INTR:  {interrupts/1000:4.1f}k/s", style="dim")
         
         self.update(text)
@@ -129,14 +128,14 @@ class KernelThermalPanel(Panel):
         except:
             return Text("Kernel telemetry unavailable")
             
-        text.append("Kernel Events\n", style=current_theme["accent"])
+        text.append("Kernel Events\n", style="cyan")
         text.append(f"  Context Switches: {stats.ctx_switches:,}\n", style="dim")
         text.append(f"  Interrupts:       {stats.interrupts:,}\n", style="dim")
         text.append(f"  Soft Interrupts:  {stats.soft_interrupts:,}\n", style="dim")
         text.append(f"  Syscalls:         {stats.syscalls:,}\n", style="dim")
         
         # Thermal Throttling / Freq details
-        text.append("\nThermal Sensors\n", style=current_theme["accent"])
+        text.append("\nThermal Sensors\n", style="cyan")
         try:
             temps = psutil.sensors_temperatures()
             if not temps:
@@ -145,7 +144,7 @@ class KernelThermalPanel(Panel):
                 for name, entries in temps.items():
                     text.append(f"  {name}\n", style="dim")
                     for e in entries:
-                        color = value_to_heat_color(e.current, current_theme["heat"])
+                        color = value_to_heat_color(e.current)
                         text.append(f"    {e.label or 'Core'}: {e.current:.1f}°C ", style=color)
                         text.append(make_bar(e.current, 100, 10) + "\n", style=color)
         except:

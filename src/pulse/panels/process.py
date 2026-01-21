@@ -2,8 +2,9 @@ import psutil
 from rich.text import Text
 
 from pulse.panels.base import Panel
-from pulse.state import current_theme
-from pulse.ui_utils import value_to_heat_color
+from pulse.ui_utils import value_to_heat_color, make_bar
+
+from pulse import core
 
 class ProcessPanel(Panel):
     """Process list showing top consumers (CPU/MEM)."""
@@ -22,12 +23,13 @@ class ProcessPanel(Panel):
         self.sampling_rate = 2.0  # Slower default for processes
         self.view_mode = "developer" # cinematic / developer
         self.scaling_mode = "auto" 
+        core.init()
     
     def get_transcendence_view(self) -> Text:
         """Ultimate Process Flow Analytics."""
         text = Text()
         text.append(f"PROCESS INFUSION ", style="bold")
-        text.append(f"[{self.view_mode.upper()} MODE] ", style=current_theme["focus"])
+        text.append(f"[{self.view_mode.upper()} MODE] ", style="cyan")
         text.append(f"SORT: {self.sort_key.upper()}\n", style="dim")
         
         if not self.last_procs:
@@ -35,19 +37,17 @@ class ProcessPanel(Panel):
 
         if self.view_mode == "cinematic":
             # Cinematic: Visual dominance
-            text.append("\nHIGH-CONSUMPTION LANDSCAPE\n", style=current_theme["accent"])
+            text.append("\nHIGH-CONSUMPTION LANDSCAPE\n", style="cyan")
             for p in self.last_procs[:15]:
                 val = p[self.sort_key]
-                color = value_to_heat_color(val if self.sort_key == 'cpu' else val * 5, current_theme["heat"])
-                text.append(f"{p['name'][:15]:<15} ", style=current_theme["accent"])
-                bar_len = int(min(val, 100) / 2) if self.sort_key == 'cpu' else int(min(val*5, 100) / 2)
-                from pulse.ui_utils import make_bar
+                color = value_to_heat_color(val if self.sort_key == 'cpu' else val * 5)
+                text.append(f"{p['name'][:15]:<15} ", style="cyan")
                 text.append(make_bar(val if self.sort_key == 'cpu' else val*5, 100, 30), style=color)
                 text.append(f" {val:>4.1f}% ", style=color)
                 text.append(f"PID: {p['pid']}\n", style="dim")
         else:
             # Developer Mode: Detailed Statistics
-            text.append("\nPROCESS REGISTRY DEPTH\n", style=current_theme["accent"])
+            text.append("\nPROCESS REGISTRY DEPTH\n", style="cyan")
             text.append(f"{'PID':<7} {'CPU%':<7} {'MEM%':<7} {'THREADS':<8} {'USER':<12} {'NAME'}\n", style="dim")
             text.append("─" * 80 + "\n", style="dim")
             
@@ -58,21 +58,21 @@ class ProcessPanel(Panel):
                     threads = proc.num_threads()
                     username = proc.username()[:12]
                     
-                    cpu_c = value_to_heat_color(p['cpu'], current_theme["heat"])
-                    mem_c = value_to_heat_color(p['mem'] * 5, current_theme["heat"])
+                    cpu_c = value_to_heat_color(p['cpu'])
+                    mem_c = value_to_heat_color(p['mem'] * 5)
                     
                     text.append(f"{p['pid']:<7}", style="dim")
                     text.append(f"{p['cpu']:>5.1f}% ", style=cpu_c)
                     text.append(f"{p['mem']:>5.1f}% ", style=mem_c)
                     text.append(f"{threads:<8}", style="dim")
                     text.append(f"{username:<12}", style="dim")
-                    text.append(f"{p['name']}\n", style=current_theme["write"])
+                    text.append(f"{p['name']}\n", style="yellow")
                 except:
                     # Fallback to last_procs data if pid vanished
                     text.append(f"{p['pid']:<7} {p['cpu']:>5.1f}% {p['mem']:>5.1f}% {'?':<8} {'?':<12} {p['name']}\n", style="dim")
             
             # Status Matrix
-            text.append("\nSYSTEM STATE DISTRIBUTION\n", style=current_theme["accent"])
+            text.append("\nSYSTEM STATE DISTRIBUTION\n", style="cyan")
             counts = {'running': 0, 'sleeping': 0, 'idle': 0, 'other': 0}
             for p in psutil.process_iter(['status']):
                 s = p.info['status']
@@ -81,10 +81,10 @@ class ProcessPanel(Panel):
             
             for s, c in counts.items():
                 text.append(f"  {s.upper():<10}: {c:>4}  ", style="dim")
-                text.append("█" * (c // 20) + "░" * (10 - (c // 20)) + "\n", style=current_theme["focus"])
+                text.append("█" * (c // 20) + "░" * (10 - (c // 20)) + "\n", style="cyan")
                 
         return text
-    
+
     def action_sort(self, mode: str):
         """Sort the process list."""
         self.sort_key = mode
@@ -94,27 +94,58 @@ class ProcessPanel(Panel):
         
     def update_data(self):
         procs = []
-        try:
-            for p in psutil.process_iter(['name', 'cpu_percent', 'memory_percent', 'pid']):
-                try:
-                    # Filter out very low usage to speed up
-                    entry = p.info
-                    cpu = entry.get('cpu_percent') or 0
-                    mem = entry.get('memory_percent') or 0
+        
+        # Try Rust Core first
+        rust_data = core.get_process_list(lambda: None)
+        
+        if rust_data is not None:
+            # Use Rust Data
+            # Note: We need total memory to calc %.
+            # For speed, we might estimate or fetch once.
+            total_mem = 0
+            try:
+                mem_inf = core.get_memory_info(lambda: None)
+                if mem_inf: total_mem = mem_inf.get('total', 0)
+            except: pass
+            if total_mem == 0: total_mem = 1 # avoid div zero
+            
+            for p in rust_data:
+                cpu = p.get('cpu_percent', 0)
+                mem_bytes = p.get('memory_info', 0)
+                mem = (mem_bytes / total_mem) * 100
+                
+                if cpu < 0.1 and mem < 0.1:
+                    continue
                     
-                    if cpu < 0.1 and mem < 0.1:
-                        continue
+                procs.append({
+                    'name': p.get('name', '?'),
+                    'cpu': cpu,
+                    'mem': mem,
+                    'pid': p.get('pid', 0)
+                })
+        else:
+            # Fallback to psutil
+            try:
+                for p in psutil.process_iter(['name', 'cpu_percent', 'memory_percent', 'pid']):
+                    try:
+                        # Filter out very low usage to speed up
+                        entry = p.info
+                        cpu = entry.get('cpu_percent') or 0
+                        mem = entry.get('memory_percent') or 0
                         
-                    procs.append({
-                        'name': entry.get('name') or '?',
-                        'cpu': cpu,
-                        'mem': mem,
-                        'pid': entry.get('pid') or 0,
-                    })
-                except (psutil.NoSuchProcess, psutil.AccessDenied):
-                    pass
-        except:
-            pass
+                        if cpu < 0.1 and mem < 0.1:
+                            continue
+                            
+                        procs.append({
+                            'name': entry.get('name') or '?',
+                            'cpu': cpu,
+                            'mem': mem,
+                            'pid': entry.get('pid') or 0,
+                        })
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        pass
+            except:
+                pass
         
         # Sort based on current mode
         procs.sort(key=lambda x: x[self.sort_key], reverse=True)
@@ -133,7 +164,7 @@ class ProcessPanel(Panel):
         for p in top_procs:
             # Choose color based on the active sort metric
             val = p[self.sort_key]
-            color = value_to_heat_color(val if self.sort_key == 'cpu' else val * 3, current_theme["heat"]) # fast hack scaling for mem
+            color = value_to_heat_color(val if self.sort_key == 'cpu' else val * 3) # fast hack scaling for mem
             
             star = "★" if val > (10 if self.sort_key == 'cpu' else 5) else "·"
             text.append(f"{star} ", style=color)
@@ -155,10 +186,10 @@ class ProcessPanel(Panel):
         
         sort_mode = "CPU" if self.sort_key == 'cpu' else "MEMORY"
         hint = "[C] Sort CPU  [M] Sort Memory"
-        text.append(f"Sorted by: {sort_mode}   ", style=current_theme["accent"])
+        text.append(f"Sorted by: {sort_mode}   ", style="cyan")
         text.append(f"{hint}\n\n", style="dim")
         
-        text.append("PID      CPU%   MEM%   NAME\n", style=current_theme["write"])
+        text.append("PID      CPU%   MEM%   NAME\n", style="yellow")
         text.append("─" * 40 + "\n", style="dim")
         
         for p in self.last_procs:
@@ -166,8 +197,8 @@ class ProcessPanel(Panel):
             mem_val = p['mem']
             
             # fast scaling for heatmap colors
-            cpu_color = value_to_heat_color(cpu_val, current_theme["heat"])
-            mem_color = value_to_heat_color(mem_val * 4, current_theme["heat"]) 
+            cpu_color = value_to_heat_color(cpu_val)
+            mem_color = value_to_heat_color(mem_val * 4) 
             
             text.append(f"{p['pid']:<8}", style="dim")
             text.append(f"{cpu_val:5.1f}%  ", style=cpu_color)

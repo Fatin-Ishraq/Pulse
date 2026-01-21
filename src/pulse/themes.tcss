@@ -1,0 +1,44 @@
+/* ============================================================================
+   PULSE - Generic Theme System
+   Uses Textual's semantic variables ($primary, $accent, etc.)
+   ============================================================================ */
+
+Screen {
+    background: $surface;
+}
+
+Header {
+    background: $primary;
+    color: $text;
+}
+
+Footer {
+    background: $primary;
+    color: $text;
+}
+
+Panel {
+    background: $surface-lighten-1;
+    border: solid $primary; 
+    border-title-color: $accent;
+    color: $text;
+}
+
+Panel:focus {
+    border: thick $accent;
+    border-title-color: $accent;
+    color: $text;
+}
+
+/* Specific component overrides */
+.alarm {
+    border: heavy $error !important;
+    border-title-color: $error !important;
+    color: $error !important;
+}
+
+/* Boot screen specific */
+BootScreen {
+    background: $surface;
+    color: $success;
+}

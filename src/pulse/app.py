@@ -17,8 +17,7 @@ from textual.app import App
 from textual.containers import Container, Vertical
 from textual.widgets import Header, Footer
 
-from pulse.themes import THEMES, THEME_ORDER
-import pulse.state
+
 
 # Import Panels
 from pulse.panels.base import Panel
@@ -38,11 +37,23 @@ from pulse.screens.help import HelpScreen
 from pulse.screens.immersive import ImmersiveScreen
 
 
+# Theme definitions
+THEMES = [
+    "nord",
+    "dracula", 
+    "monokai",
+    "textual-dark",
+    "solarized-dark",
+    "gruvbox",
+]
+
 class PulseApp(App):
     """A cinematic terminal-based system monitor."""
     
     TITLE = "P U L S E"
-    SUB_TITLE = "BRIDGE"
+    
+    # Import theme CSS
+    CSS_PATH = "themes.tcss"
     
     CSS = """
     Screen { background: transparent; }
@@ -107,44 +118,7 @@ class PulseApp(App):
         if isinstance(focused, Panel):
             self.push_screen(ImmersiveScreen(focused))
     
-    def apply_theme(self):
-        """Apply the current theme colors to the app UI."""
-        theme = pulse.state.current_theme
-        
-        # Update Screen background
-        self.screen.styles.background = theme["bg"]
-        
-        # Update Header & Footer
-        for h in self.query(Header):
-            h.styles.background = theme["primary"]
-            h.styles.color = theme["focus"]
-        for f in self.query(Footer):
-            f.styles.background = theme["primary"]
-            f.styles.color = theme["accent"]
 
-        # Update all panels
-        for panel in self.query(Panel):
-            # Base border style
-            panel.styles.border = ("solid", theme["primary"])
-            panel.styles.border_title_color = theme["primary"]
-            panel.styles.color = theme["accent"]
-            panel.styles.background = "transparent"
-            
-            # Focused panel gets high contrast
-            if panel.has_focus:
-                panel.styles.border = ("thick", theme["focus"])
-                panel.styles.border_title_color = theme["focus"]
-                panel.styles.color = theme["focus"]
-                panel.styles.text_style = "bold"
-            else:
-                panel.styles.text_style = "none"
-            
-            # Specific panel overrides (like Alarms)
-            if "alarm" in panel.classes:
-                panel.styles.border = ("heavy", theme["alarm"])
-                panel.styles.color = theme["alarm"]
-                panel.styles.border_title_color = theme["alarm"]
-    
     def action_help(self):
         """Show help screen."""
         self.push_screen(HelpScreen())
@@ -152,7 +126,7 @@ class PulseApp(App):
     def __init__(self):
         super().__init__()
         self.frozen = False
-        self.theme_index = 0
+        self.theme_index = 0  # Start with Nord theme
     
     def compose(self):
         yield Header()
@@ -181,13 +155,20 @@ class PulseApp(App):
         # Push boot screen immediately
         self.push_screen(BootScreen())
         
+        # Apply initial theme
         self.apply_theme()
+        
         self.set_interval(1.0, self.refresh_data)
         self.refresh_data()
     
+    def apply_theme(self):
+        """Apply the current theme."""
+        theme = THEMES[self.theme_index]
+        self.theme = theme
+        self.sub_title = f"Theme: {theme.upper()} (Press ? for Help)"
+    
     def on_descendant_focus(self, event):
         """Called when any widget inside the app gains focus."""
-        self.apply_theme() # Refresh dynamic styles
         focused = event.widget
         main_panel = self.query_one("#main-panel", MainViewPanel)
         
@@ -200,7 +181,7 @@ class PulseApp(App):
     
     def on_descendant_blur(self, event):
         """Called when a widget loses focus."""
-        self.apply_theme()
+        pass
     
     def refresh_data(self):
         """Refresh all panels."""
@@ -216,24 +197,21 @@ class PulseApp(App):
         self.query_one("#main-panel", MainViewPanel).update_data()
         self.query_one("#insight-panel", InsightPanel).update_data()
     
+    
     def action_cycle_theme(self):
         """Cycle through available themes."""
-        self.theme_index = (self.theme_index + 1) % len(THEME_ORDER)
-        theme_key = THEME_ORDER[self.theme_index]
-        pulse.state.current_theme = THEMES[theme_key]
-        theme = pulse.state.current_theme
-        self.sub_title = f"{theme['name']} — {theme['desc']} (Press ? for Help)"
+        self.theme_index = (self.theme_index + 1) % len(THEMES)
         self.apply_theme()
-        self.refresh_data()
+        self.refresh_data()  # Refresh to show visual updates immediately
     
     def action_freeze(self):
+        """Toggle freeze state."""
         self.frozen = not self.frozen
-        theme = pulse.state.current_theme
+        theme = THEMES[self.theme_index]
         if self.frozen:
             self.sub_title = "FROZEN ❄ (Press F to Unfreeze)"
         else:
-            self.sub_title = f"{theme['name']} — {theme['desc']} (Press ? for Help)"
-        self.apply_theme()
+            self.sub_title = f"Theme: {theme.upper()} (Press ? for Help)"
 
 
 def main():

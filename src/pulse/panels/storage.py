@@ -3,7 +3,6 @@ import psutil
 from rich.text import Text
 
 from pulse.panels.base import Panel
-from pulse.state import current_theme
 from pulse.ui_utils import value_to_heat_color, make_bar
 
 class StoragePanel(Panel):
@@ -22,26 +21,26 @@ class StoragePanel(Panel):
         """Ultimate Storage Matrix with Mount Point Health & Detailed Inodes."""
         text = Text()
         text.append(f"STORAGE INFUSION ", style="bold")
-        text.append(f"[{self.view_mode.upper()} MODE]\n", style=current_theme["focus"])
+        text.append(f"[{self.view_mode.upper()} MODE]\n", style="cyan")
         
         try:
             parts = psutil.disk_partitions()
             
             if self.view_mode == "cinematic":
-                text.append("\nVOLUME HEALTH LANDSCAPE\n", style=current_theme["accent"])
+                text.append("\nVOLUME HEALTH LANDSCAPE\n", style="cyan")
                 for part in parts:
                     if 'cdrom' in part.opts or part.fstype == '': continue
                     try:
                         usage = psutil.disk_usage(part.mountpoint)
-                        color = value_to_heat_color(usage.percent, current_theme["heat"])
-                        text.append(f"{part.mountpoint:<15}", style=current_theme["accent"])
+                        color = value_to_heat_color(usage.percent)
+                        text.append(f"{part.mountpoint:<15}", style="cyan")
                         text.append(make_bar(usage.percent, 100, 30), style=color)
                         text.append(f" {usage.percent:>4.1f}% ", style=color)
                         text.append(f"[{usage.used/(1024**3):.1f}/{usage.total/(1024**3):.1f} GB]\n", style="dim")
                     except: continue
             else:
                 # Developer Mode: Detailed Inodes & Mount Flags
-                text.append("\nMOUNT POINT REGISTRY\n", style=current_theme["accent"])
+                text.append("\nMOUNT POINT REGISTRY\n", style="cyan")
                 text.append(f"{'MOUNT':<15} {'FSTYPE':<8} {'USAGE':<20} {'INODES':<15} {'FLAGS'}\n", style="dim")
                 text.append("─" * 80 + "\n", style="dim")
                 
@@ -49,9 +48,9 @@ class StoragePanel(Panel):
                     if 'cdrom' in part.opts or part.fstype == '': continue
                     try:
                         usage = psutil.disk_usage(part.mountpoint)
-                        color = value_to_heat_color(usage.percent, current_theme["heat"])
+                        color = value_to_heat_color(usage.percent)
                         
-                        text.append(f"{part.mountpoint[:15]:<15}", style=current_theme["accent"])
+                        text.append(f"{part.mountpoint[:15]:<15}", style="cyan")
                         text.append(f"{part.fstype:<8}", style="dim")
                         text.append(make_bar(usage.percent, 100, 10) + f" {usage.percent:>4.1f}% ", style=color)
                         
@@ -59,7 +58,7 @@ class StoragePanel(Panel):
                         try:
                             # psutil usage object might have .inodes_percent
                             if hasattr(usage, 'inodes_percent') and usage.inodes_percent is not None:
-                                i_color = value_to_heat_color(usage.inodes_percent, current_theme["heat"])
+                                i_color = value_to_heat_color(usage.inodes_percent)
                                 text.append(f"{usage.inodes_percent:>5.1f}% inodes ", style=i_color)
                             else:
                                 text.append("N/A inodes      ", style="dim")
@@ -72,7 +71,7 @@ class StoragePanel(Panel):
                         text.append("\n")
                     except: continue
                 
-                text.append("\nI/O COUNTERS (SYSTEM-WIDE)\n", style=current_theme["accent"])
+                text.append("\nI/O COUNTERS (SYSTEM-WIDE)\n", style="cyan")
                 io = psutil.disk_io_counters()
                 if io:
                     text.append(f"  READ:  {io.read_bytes/(1024**3):.2f} GB ({io.read_count:,} ops)\n", style="green")
@@ -95,10 +94,10 @@ class StoragePanel(Panel):
                     continue
                 try:
                     usage = psutil.disk_usage(part.mountpoint)
-                    color = value_to_heat_color(usage.percent, current_theme["heat"])
+                    color = value_to_heat_color(usage.percent)
                     
                     drive = part.mountpoint[:2] if platform.system() == "Windows" else part.mountpoint[-8:]
-                    text.append(f"{drive:<4} ", style=current_theme["accent"])
+                    text.append(f"{drive:<4} ", style="cyan")
                     text.append(make_bar(usage.percent, 100, 8), style=color)
                     text.append(f" {usage.percent:3.0f}%\n", style=color)
                     count += 1
@@ -125,10 +124,10 @@ class StoragePanel(Panel):
                     continue
                 try:
                     usage = psutil.disk_usage(part.mountpoint)
-                    color = value_to_heat_color(usage.percent, current_theme["heat"])
+                    color = value_to_heat_color(usage.percent)
                     
                     label = part.mountpoint[:12]
-                    text.append(f"{label:<12}", style=current_theme["accent"])
+                    text.append(f"{label:<12}", style="cyan")
                     text.append(f"{part.fstype:<8}", style="dim")
                     # Wide bar
                     text.append(make_bar(usage.percent, 100, 20) + f" {usage.percent:>3.0f}% ", style=color)
