@@ -38,4 +38,4 @@ pulse = "pulse.app:main"
 features = ["pyo3/extension-module"]
 python-source = "src"
 module-name = "pulse_core"
-manifest-path = "src/pulse_core/Cargo.toml"
+manifest-path = "pulse_core/Cargo.toml"

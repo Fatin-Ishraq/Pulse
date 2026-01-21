@@ -23,6 +23,8 @@ wheels/
 # Rust
 target/
 Cargo.lock
+pulse_core/target/
+pulse_core/Cargo.lock
 
 # IDEs
 .vscode/
