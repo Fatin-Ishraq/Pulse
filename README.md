@@ -14,14 +14,19 @@
 
 ## 🚀 Installation
 
-### From Source (Hybrid Core)
-The core engine leverages **Rust** for maximum performance. To build from source, you need the [Rust Toolchain](https://rustup.rs/) and [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) installed.
+### Automated Optimal Experience (Recommended)
+Pulse automatically builds high-performance binaries for **Windows, Linux, and macOS**. To get the most optimal experience:
 
-```bash
-git clone https://github.com/Fatin-Ishraq/Pulse.git
-cd Pulse
-pip install .
-```
+1.  **Clone the Repo**: `git clone https://github.com/Fatin-Ishraq/Pulse.git`
+2.  **Pull Native Engine**: Pulse will automatically detect and use pre-compiled binaries from the GitHub Actions builds.
+3.  **Install & Run**:
+    ```bash
+    pip install .
+    python -m pulse
+    ```
+
+### From Source (For Contributors)
+If you want to compile the Rust core manually, you'll need the [Rust Toolchain](https://rustup.rs/) and [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/).
 
 ### via PyPI (Stable)
 ```bash

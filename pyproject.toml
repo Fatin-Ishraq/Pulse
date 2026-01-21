@@ -36,6 +36,6 @@ pulse = "pulse.app:main"
 
 [tool.maturin]
 features = ["pyo3/extension-module"]
-python-source = "src"
+python-source = "."
 module-name = "pulse_core"
 manifest-path = "pulse_core/Cargo.toml"
