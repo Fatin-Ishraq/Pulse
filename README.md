@@ -2,7 +2,7 @@
 
 > *"Not a dashboard. An instrument panel."*
 
-**Pulse** is a cinematic, terminal-based system monitor built for enthusiasts who crave high-density telemetry with a premium aesthetic. Every panel animates; nothing is static. 
+**Pulse** is a cinematic, terminal-based system monitor built for enthusiasts who crave high-density telemetry with a premium aesthetic. Every panel animates; nothing is static.
 
 ## ✨ Key Features
 
@@ -10,24 +10,18 @@
 - **Neural Insight Engine**: Heuristic analysis of system bottlenecks.
 - **Dynamic Theming**: Cycle through high-contrast palettes (Key: `T`).
 - **High-Precision Pulse**: Up to 0.2s sampling rate for micro-stutter detection.
-- **Modular Core**: High-performance architecture leveraging `psutil` and `Textual`.
+- **Direct OS Engine**: High-performance architecture with zero external build dependencies.
 
 ## 🚀 Installation
 
-### via PyPI
 ```bash
-pip install pulse-monitor
+git clone https://github.com/Fatin-Ishraq/Pulse.git
+cd Pulse
+pip install .
+python -m pulse
 ```
 
-### from Source
-The core engine is written in Rust for performance. You need Rust/Cargo installed.
-
-```bash
-git clone https://github.com/pulse-monitor/pulse.git
-cd pulse
-pip install maturin
-maturin develop
-```
+That's it. No Rust, no build tools, no extra steps.
 
 ## 🎮 Navigation & Controls
 
@@ -45,3 +39,7 @@ When inside a full-screen panel:
 - `R` — Toggle **Sampling Rate** (Precision Pulse)
 - `F` — Trigger **Optimization/Reset** (Panel-specific)
 - `S` — Cycle **Scaling Mode** (Absolute vs. Auto)
+
+## License
+
+MIT

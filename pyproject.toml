@@ -1,30 +1,29 @@
 [build-system]
-requires = ["maturin>=1.0,<2.0"]
-build-backend = "maturin"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
 name = "pulse-monitor"
-version = "0.2.0"
-description = "A cinematic terminal-based system monitor (Hybrid Rust/Python)"
+version = "0.3.0"
+description = "A cinematic terminal-based system monitor with Direct OS optimization"
 readme = "README.md"
 requires-python = ">=3.10"
 authors = [
-    { name = "Pulse Team", email = "dev@pulse-monitor.io" },
+    { name = "Fatin Ishraq", email = "dev@pulse-monitor.io" },
 ]
 license = { text = "MIT" }
 classifiers = [
     "Programming Language :: Python :: 3",
-    "Programming Language :: Rust",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Topic :: System :: Monitoring",
     "Environment :: Console",
 ]
-keywords = ["terminal", "tui", "system-monitor", "telemetry", "cinematic", "rust"]
+keywords = ["terminal", "tui", "system-monitor", "telemetry", "cinematic"]
 dependencies = [
     "textual>=2.0.0",
     "rich>=13.0.0",
-    "psutil>=5.9.0", # Keeping for fallback/other panels
+    "psutil>=5.9.0",
 ]
 
 [project.urls]
@@ -34,8 +33,5 @@ Repository = "https://github.com/Fatin-Ishraq/Pulse.git"
 [project.scripts]
 pulse = "pulse.app:main"
 
-[tool.maturin]
-features = ["pyo3/extension-module"]
-python-source = "src"
-module-name = "pulse_core"
-manifest-path = "src/pulse_core/Cargo.toml"
+[tool.hatch.build.targets.wheel]
+packages = ["src/pulse"]
