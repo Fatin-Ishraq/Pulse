@@ -1,45 +1,66 @@
-# ⚡ Pulse
+# ⚡ P U L S E
 
 > *"Not a dashboard. An instrument panel."*
 
-**Pulse** is a cinematic, terminal-based system monitor built for enthusiasts who crave high-density telemetry with a premium aesthetic. Every panel animates; nothing is static.
+**Pulse** is a cinematic, terminal-based system monitor built for enthusiasts who crave high-density telemetry with a premium aesthetic. Every panel animates; nothing is static. 
 
-## ✨ Key Features
+Built with the **Direct OS Engine**, Pulse communicates directly with your kernel for high-performance metrics with near-zero overhead.
 
-- **Transcendence Modes**: Fullscreen immersive views for every subsystem.
-- **Neural Insight Engine**: Heuristic analysis of system bottlenecks.
-- **Dynamic Theming**: Cycle through high-contrast palettes (Key: `T`).
-- **High-Precision Pulse**: Up to 0.2s sampling rate for micro-stutter detection.
-- **Direct OS Engine**: High-performance architecture with zero external build dependencies.
+---
+
+## ✨ Features
+
+- **Direct OS Engine**: High-performance architecture using native OS APIs. No Rust, no complex build tools—just pure, optimized Python.
+- **Transcendence mode**: Hit `X` on any focused subsystem to enter an immersive, high-detail view.
+- **Neural Insight Engine**: Real-time heuristic analysis of system bottlenecks and resource leaks.
+- **Cinematic UI**: Smooth animations, glassmorphism-inspired transparency, and curated color palettes.
+- **High-Precision Pulse**: Configurable sampling rates down to 0.2s for micro-stutter detection.
+
+---
 
 ## 🚀 Installation
 
+Install directly from PyPI:
+
 ```bash
-git clone https://github.com/Fatin-Ishraq/Pulse.git
-cd Pulse
-pip install .
-python -m pulse
+pip install pulse-monitor
 ```
 
-That's it. No Rust, no build tools, no extra steps.
+Then launch from anywhere:
 
-## 🎮 Navigation & Controls
+```bash
+pulse
+```
 
-| Key | Action |
+---
+
+## 🎮 Navigation & Tactical Controls
+
+| Key | Tactical Action |
 | --- | --- |
-| `Q` | Kill Application |
-| `T` | Cycle UI Theme |
-| `H` | Toggle Help Overlay |
-| `X` | Enter/Exit **Transcendence Mode** |
-| `Tab` | Cycle Focused Subsystem |
+| `Q` | Kill Application Interlock |
+| `T` | Cycle UI Theme Palettes |
+| `Tab` | Shift Tactical Focus (Forward) |
+| `Shift+Tab`| Shift Tactical Focus (Backward) |
+| `Arrow Keys`| Spatial Navigation Grid |
+| `X` | Enter/Exit **Transcendence View** |
+| `F` | Toggle **Data Freeze** (Cryo-lock) |
+| `?` / `H` | Toggle Tactical Overlay (Help) |
 
 ### 🌀 Transcendence Interaction
 When inside a full-screen panel:
 - `M` — Toggle **View Mode** (Cinematic vs. Developer)
 - `R` — Toggle **Sampling Rate** (Precision Pulse)
-- `F` — Trigger **Optimization/Reset** (Panel-specific)
 - `S` — Cycle **Scaling Mode** (Absolute vs. Auto)
+- `Esc` — Return to Master View
 
-## License
+---
 
-MIT
+## 💎 Theming
+Pulse comes with 6 curated high-contrast themes to match your terminal's vibe:
+`Nord` • `Dracula` • `Monokai` • `Dark` • `Solarized` • `Gruvbox`
+
+---
+
+## 📜 License
+MIT © [Fatin Ishraq](https://github.com/Fatin-Ishraq)
