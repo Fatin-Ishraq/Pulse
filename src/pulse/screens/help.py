@@ -34,7 +34,7 @@ class HelpScreen(ModalScreen):
 
 | Key | Action |
 | :-: | :--- |
-| **T** | Cycle Theme (Bridge/Reactor/Matrix/Vapor/Mono) |
+| **T** | Cycle Theme (Nord/Dracula/Monokai/Dark/Solarized/Gruvbox) |
 | **F** | Freeze / Unfreeze Updates |
 | **C** | Sort Processes by CPU |
 | **M** | Sort Processes by Memory |

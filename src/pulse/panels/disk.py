@@ -5,10 +5,17 @@ from rich.text import Text
 from pulse.panels.base import Panel
 from pulse.ui_utils import value_to_spark, value_to_heat_color, make_bar
 
+from textual.widgets import DataTable, Static, Button
+from textual.containers import Container, Horizontal
+from textual.binding import Binding
+
 class DiskIOPanel(Panel):
     """Disk I/O waveform showing read/write activity."""
     
     PANEL_NAME = "DISK I/O"
+    BINDINGS = [
+        Binding("r", "refresh_stats", "Refresh", priority=True)
+    ]
     
     def __init__(self):
         super().__init__("DISK I/O", "", id="disk-panel")
@@ -25,6 +32,17 @@ class DiskIOPanel(Panel):
         self.sampling_rate = 1.0
         self.view_mode = "developer" # cinematic / developer
         self.scaling_mode = "auto" # auto / absolute
+    
+    def action_refresh_stats(self):
+        """Force refresh."""
+        self.refresh_content(force=True)
+        self.notify("Refreshing Disk Stats...")
+    
+    def refresh_content(self, force=False):
+        if hasattr(self.app.screen, "query_one"):
+             try:
+                 self.update_transcendence(self.app.screen)
+             except: pass
     
     def update_data(self):
         try:
@@ -75,60 +93,95 @@ class DiskIOPanel(Panel):
         
         self.update(text)
 
-    def get_transcendence_view(self) -> Text:
-        """Immersive Disk console with throughput waves and per-drive telemetry."""
-        text = Text()
+    def compose_transcendence(self):
+        """Interactive Disk I/O Matrix."""
+        with Container(id="disk-transcendence-layout"):
+            with Horizontal(classes="header-section"):
+                yield Static(id="disk-hero-header")
+            
+            yield DataTable(id="disk_table", cursor_type="row", zebra_stripes=True)
+            
+            with Horizontal(classes="footer-section", id="disk-actions"):
+                yield Button("REFRESH [R]", id="btn_refresh", variant="primary")
+                yield Static("  Monitoring Real-Time I/O Activity", classes="status-text")
+    
+    def on_button_pressed(self, event: Button.Pressed):
+        if event.button.id == "btn_refresh":
+            self.update_transcendence(self.app.screen)
+            self.notify("Refreshed I/O Stats")
+
+    def update_transcendence(self, screen):
+        """Update Disk I/O Table."""
+        table = screen.query_one("#disk_table", DataTable)
+        header = screen.query_one("#disk-hero-header", Static)
+        
+        # Init Cols
+        if not table.columns:
+            table.add_columns("DEVICE", "MOUNT", "READ RATE", "WRITE RATE", "TOTAL READ", "TOTAL WRITE", "BUSY")
+        
         try:
-            io = psutil.disk_io_counters()
-            per_disk = psutil.disk_io_counters(perdisk=True)
-        except:
-            return Text("Disk Telemetry Offline")
-
-        # --- HERO HEADER ---
-        text.append(f"DISK FLOW ANALYTICS ", style="bold")
-        text.append(f"[{self.view_mode.upper()} MODE]\n", style="cyan")
-        
-        rlat_style = value_to_heat_color(self.current_read_lat * 2)
-        wlat_style = value_to_heat_color(self.current_write_lat * 2)
-        
-        text.append(f"READ LATENCY:  {self.current_read_lat:6.2f} ms ", style=rlat_style)
-        text.append(make_bar(min(self.current_read_lat, 50), 50, 20), style=rlat_style)
-        text.append("\n")
-        text.append(f"WRITE LATENCY: {self.current_write_lat:6.2f} ms ", style=wlat_style)
-        text.append(make_bar(min(self.current_write_lat, 50), 50, 20), style=wlat_style)
-        text.append("\n")
-
-        if self.view_mode == "cinematic":
-            # Massive Waveform Focus
-            text.append("\nREAD THROUGHPUT (80s)\n", style="cyan")
-            for val in self.read_history:
-                text.append(value_to_spark(val), style="cyan")
+            io_counters = psutil.disk_io_counters(perdisk=True)
+            parts = {p.device: p.mountpoint for p in psutil.disk_partitions()}
             
-            text.append("\n\nWRITE THROUGHPUT (80s)\n", style="yellow")
-            for val in self.write_history:
-                text.append(value_to_spark(val), style="yellow")
+            current_rows = set(table.rows.keys())
+            seen_devs = set()
+            
+            total_r_rate = 0
+            total_w_rate = 0
+            
+            # We need persistent state for per-disk rate calculation or just show cumulative?
+            # Rates are hard without per-disk history in this class (we only store global history).
+            # For now, we'll show Cumulative Totals and derive instantaneous rate if possible, 
+            # OR just show cumulative.
+            # Let's show Cumulative for now, and maybe "Activity" if available.
+            # actually psutil raw values are cumulative.
+            # To show Rate, we need diffs. 
+            # Detailed per-disk rate tracking is complex for this step.
+            # Let's stick to Total Data Transferred and Busy Time for this version.
+            
+            for dev, io in io_counters.items():
+                mount = parts.get(dev, parts.get(dev.replace('/dev/', ''), "?"))
                 
-            text.append("\n\nI/O OPERATIONS (Total)\n", style="cyan")
-            text.append(f"  READS:  {io.read_count:,}    WRITES: {io.write_count:,}\n", style="dim")
-        else:
-            # Developer Focus: Per-Disk Matrix
-            text.append("\n80s I/O PULSE: ", style="dim")
-            for r, w in zip(list(self.read_history)[-30:], list(self.write_history)[-30:]):
-                text.append("R" if r > w else "W", style="cyan" if r > w else "yellow")
+                seen_devs.add(dev)
+                
+                r_gb = io.read_bytes / (1024**3)
+                w_gb = io.write_bytes / (1024**3)
+                busy = f"{io.busy_time/1000:.1f}s" if hasattr(io, 'busy_time') else "N/A"
+                
+                # Colorize large transfers
+                r_style = value_to_heat_color(min(r_gb * 10, 100))
+                w_style = value_to_heat_color(min(w_gb * 10, 100))
+                
+                row = [
+                    dev,
+                    mount,
+                    Text(f"---", style="dim"), # Rate placeholder (requires state)
+                    Text(f"---", style="dim"),
+                    Text(f"{r_gb:6.2f} GB", style=r_style),
+                    Text(f"{w_gb:6.2f} GB", style=w_style),
+                    busy
+                ]
+                
+                if dev in current_rows:
+                    for i, val in enumerate(row):
+                        table.update_cell(dev, list(table.columns.keys())[i], val)
+                else:
+                    table.add_row(*row, key=dev)
             
-            text.append("\n\nDRIVE ACTIVITY MATRIX\n", style="cyan")
-            text.append(f"{'DISK':<12} {'READ':<10} {'WRITE':<10} {'BUSY%'}\n", style="dim")
-            text.append("─" * 45 + "\n", style="dim")
-            for disk, d_io in per_disk.items():
-                text.append(f"  {disk:<10} ", style="cyan")
-                text.append(f"{d_io.read_bytes/(1024**2):>6.1f}MB ", style="cyan")
-                text.append(f"{d_io.write_bytes/(1024**2):>6.1f}MB ", style="yellow")
-                # Busy time is only on some systems
-                if hasattr(d_io, 'busy_time'):
-                    text.append(f" {d_io.busy_time/1000:>6.1f}s", style="dim")
-                text.append("\n")
+            # Update Header
+            glob = psutil.disk_io_counters()
+            r_rate = self.read_history[-1] if self.read_history else 0
+            w_rate = self.write_history[-1] if self.write_history else 0
+            # Note: history stores calculated MB/s roughly
+            
+            header.update(f"DISK I/O MATRIX   GLOBAL READ: {r_rate/2:.1f} MB/s   GLOBAL WRITE: {w_rate/2:.1f} MB/s")
+            
+        except Exception as e:
+            header.update(f"Disk Telemetry Error: {e}")
 
-        return text
+    def get_transcendence_view(self) -> Text:
+        """Fallback text view (should not be reached if compose_transcendence works)."""
+        return Text("Interactive Mode Active")
 
     def get_detailed_view(self) -> Text:
         """High-res disk telemetry and response heatmap."""

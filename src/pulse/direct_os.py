@@ -9,6 +9,7 @@ for maximum performance on critical paths.
 import os
 import sys
 import time
+import signal
 from typing import List, Dict, Optional, Any
 
 # Platform detection
@@ -83,7 +84,7 @@ if LINUX:
         current = read_cpu_times()
         now = time.time()
         
-        if _last_cpu_times is None or now - _last_cpu_check > 0.1:
+        if _last_cpu_times is None or now - _last_cpu_check > 0.05: # Reduced from 0.1 for high-res pulse
             _last_cpu_times = current
             _last_cpu_check = now
             return [0.0] * len(current)
@@ -97,6 +98,8 @@ if LINUX:
             else:
                 percents.append(0.0)
         
+        # Do NOT update _last_cpu_times here if we want a rolling window?
+        # Actually standard psutil logic IS to update.
         _last_cpu_times = current
         _last_cpu_check = now
         return percents
@@ -204,6 +207,20 @@ if LINUX:
             pass
         
         return disks
+
+    def kill_process(pid: int) -> None:
+        """Kill a process."""
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+
+    def renice_process(pid: int, nice_value: int) -> None:
+        """Change process priority (nice value)."""
+        try:
+            os.setpriority(os.PRIO_PROCESS, pid, nice_value)
+        except (ProcessLookupError, PermissionError):
+            pass
 
 # ============================================================================
 # WINDOWS IMPLEMENTATION (Uses ctypes + kernel32/psapi)
@@ -315,6 +332,44 @@ elif WINDOWS:
         
         return disks
 
+    def kill_process(pid: int) -> str:
+        """Kill a process with force fallback."""
+        try:
+            p = _get_psutil().Process(pid)
+            p.kill() # Try SIGKILL/Terminate immediately
+            try:
+                p.wait(timeout=0.1)
+            except: pass
+            return f"Terminated PID {pid}"
+        except _get_psutil().NoSuchProcess:
+            return f"Process {pid} already gone"
+        except _get_psutil().AccessDenied:
+            # Windows Force Kill
+            import subprocess
+            try:
+                subprocess.run(["taskkill", "/F", "/PID", str(pid)], 
+                             capture_output=True, creationflags=0x08000000) # CREATE_NO_WINDOW
+                return f"Force Killed PID {pid}"
+            except Exception as e:
+                return f"Access Denied: {e}"
+        except Exception as e:
+            return f"Kill Failed: {e}"
+
+    def renice_process(pid: int, nice_value: int) -> None:
+        """Change process priority."""
+        try:
+            p = _get_psutil().Process(pid)
+            # Windows priority classes: IDLE, BELOW_NORMAL, NORMAL, ABOVE_NORMAL, HIGH, REALTIME
+            # Map nice value (-20 to 19) to these somewhat
+            if nice_value < -10: priority = _get_psutil().HIGH_PRIORITY_CLASS
+            elif nice_value < 0: priority = _get_psutil().ABOVE_NORMAL_PRIORITY_CLASS
+            elif nice_value == 0: priority = _get_psutil().NORMAL_PRIORITY_CLASS
+            elif nice_value < 10: priority = _get_psutil().BELOW_NORMAL_PRIORITY_CLASS
+            else: priority = _get_psutil().IDLE_PRIORITY_CLASS
+            p.nice(priority)
+        except:
+            pass
+
 # ============================================================================
 # MACOS IMPLEMENTATION
 # ============================================================================
@@ -382,6 +437,18 @@ elif MACOS:
             except (PermissionError, OSError):
                 continue
         return disks
+
+    def kill_process(pid: int) -> None:
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except:
+            pass
+
+    def renice_process(pid: int, nice_value: int) -> None:
+        try:
+            psutil.Process(pid).nice(nice_value)
+        except:
+            pass
 
 # ============================================================================
 # INITIALIZATION

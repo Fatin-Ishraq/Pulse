@@ -6,6 +6,9 @@ from pulse import core
 from pulse.panels.base import Panel
 from pulse.ui_utils import value_to_spark, value_to_heat_color
 
+from textual.containers import Container, Vertical, Horizontal
+from textual.widgets import Static, Button
+
 # Adapter for Rust dict to psutil-like object
 class MemAdapter:
     def __init__(self, d, prefix=""):
@@ -21,6 +24,9 @@ class MemoryPanel(Panel):
     PANEL_NAME = "MEMORY"
     BINDINGS = [
         ("f", "optimize", "Flush/Optimize"),
+        ("k", "kill_process", "Kill Process"),
+        ("plus", "renice_up", "Lower Priority"),
+        ("minus", "renice_down", "Higher Priority"),
     ]
     
     def __init__(self):
@@ -31,9 +37,142 @@ class MemoryPanel(Panel):
         # Transcendence Control States
         self.sampling_rate = 1.0
         self.view_mode = "developer" # cinematic / developer
-        self.scaling_mode = "absolute" # absolute / relative
+        self.selected_pid = None
         
         core.init()
+
+    def action_kill_process(self):
+        """Kill selected process via keyboard."""
+        if self.selected_pid:
+            core.kill_process(self.selected_pid)
+            self.notify(f"Terminated PID {self.selected_pid}")
+            self.selected_pid = None
+
+    def action_renice_up(self):
+        """Increase nice value (lower priority)."""
+        self._adjust_nice(1)
+
+    def action_renice_down(self):
+        """Decrease nice value (higher priority)."""
+        self._adjust_nice(-1)
+
+    def _adjust_nice(self, delta):
+        if not self.selected_pid: return
+        try:
+            p = psutil.Process(self.selected_pid)
+            new_nice = max(-20, min(19, p.nice() + delta))
+            core.renice_process(self.selected_pid, new_nice)
+            self.notify(f"PID {self.selected_pid} Nice: {new_nice}")
+        except:
+            self.notify("Failed to renice", severity="error")
+
+    def compose_transcendence(self):
+        """Compose the interactive Memory Management Console."""
+        with Container(id="mem-transcendence-layout"):
+            # Top Section: Header & Stats
+            with Horizontal(classes="header-section"):
+                yield Static(id="mem-hero-header")
+            
+            # Middle: Memory Map
+            with Container(classes="core-section"):
+                yield Static("ALLOCATION MAP (PHYSICAL vs SWAP)", classes="section-title")
+                yield Static(id="mem-allocation-map")
+            
+            # Bottom: Process Inspector
+            with Container(classes="process-section"):
+                yield Static("TOP MEMORY OFFENDER", classes="section-title")
+                with Horizontal(id="process-control-box"):
+                    yield Static(id="mem-top-process-info", classes="process-info")
+                    with Vertical(id="process-actions"):
+                        yield Button("KILL PID [K]", id="btn-kill", variant="error")
+                        with Horizontal():
+                            yield Button("NICE + [+] ", id="btn-renice-up", variant="warning")
+                            yield Button("NICE - [-] ", id="btn-renice-down", variant="success")
+
+    def on_button_pressed(self, event: Button.Pressed):
+        """Handle process control buttons."""
+        if not self.selected_pid:
+            return
+            
+        if event.button.id == "btn-kill":
+            res = core.kill_process(self.selected_pid)
+            self.notify(res)
+            self.selected_pid = None
+        elif event.button.id.startswith("btn-renice"):
+            try:
+                p = psutil.Process(self.selected_pid)
+                nice = p.nice()
+                if "up" in event.button.id: 
+                    new_nice = min(19, nice + 1)
+                else: 
+                    new_nice = max(-20, nice - 1)
+                core.renice_process(self.selected_pid, new_nice)
+                self.notify(f"Reniced PID {self.selected_pid} to {new_nice}")
+            except:
+                self.notify("Failed to renice", severity="error")
+
+    def update_transcendence(self, screen):
+        """Update the interactive transcendence view."""
+        self.update_data() # Ensure fresh data
+        
+        # 1. Update Header
+        try:
+            data = core.get_memory_info()
+            mem = MemAdapter(data)
+            swap = MemAdapter(data, prefix="swap_")
+            
+            header = Text()
+            header.append(f"MEM PRESSURE: {mem.percent:3.0f}%  ", style="bold " + value_to_heat_color(mem.percent))
+            from pulse.ui_utils import make_bar
+            header.append(make_bar(mem.percent, 30, 20), style=value_to_heat_color(mem.percent))
+            header.append(f"   SWAP: {swap.percent:.0f}%   ", style="yellow")
+            header.append(f"TOTAL: {mem.total / (1024**3):.1f} GB", style="dim")
+            screen.query_one("#mem-hero-header", Static).update(header)
+            
+            # 2. Update Allocation Map
+            # Visual layout of physical vs swap
+            # 100 blocks total
+            total_vol = mem.total + swap.total
+            phys_blocks = int((mem.used / total_vol) * 100) if total_vol else 0
+            swap_blocks = int((swap.used / total_vol) * 100) if total_vol else 0
+            
+            amap = Text()
+            # Physical
+            amap.append("PHYSICAL RAM IN USE\n", style="cyan")
+            amap.append("█" * phys_blocks, style="cyan")
+            amap.append("░" * (50 - phys_blocks) if phys_blocks < 50 else "", style="dim cyan")
+            
+            amap.append("\n\nSWAP FILE COMMITTED\n", style="yellow")
+            amap.append("▓" * swap_blocks, style="yellow")
+            
+            amap.append("\n\nSTATS:\n", style="bold")
+            amap.append(f"  Available: {mem.available / (1024**3):.2f} GB\n", style="green")
+            amap.append(f"  Used:      {mem.used / (1024**3):.2f} GB\n", style="cyan")
+            amap.append(f"  Swap Used: {swap.used / (1024**3):.2f} GB", style="yellow")
+            
+            screen.query_one("#mem-allocation-map", Static).update(amap)
+            
+        except Exception:
+            pass # Guard against race conditions
+            
+        # 3. Update Top Memory Offender
+        try:
+            procs = core.get_process_list(sort_by='mem', limit=1)
+            if procs:
+                top = procs[0]
+                self.selected_pid = top['pid']
+                mem_mb = top['memory_info'] / (1024 * 1024)
+                
+                info = Text()
+                info.append(f"PID: {top['pid']}\n", style="bold yellow")
+                info.append(f"NAME: {top['name']}\n", style="bold white")
+                info.append(f"MEM: {mem_mb:.1f} MB\n", style="cyan")
+                
+                screen.query_one("#mem-top-process-info", Static).update(info)
+            else:
+                screen.query_one("#mem-top-process-info", Static).update("No active processes identified.")
+        except:
+            pass
 
     def action_optimize(self):
         """Simulate memory optimization/cache flush."""

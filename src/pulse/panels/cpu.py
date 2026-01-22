@@ -6,11 +6,21 @@ from pulse import core
 from pulse.panels.base import Panel
 from pulse.ui_utils import value_to_spark, value_to_heat_color, make_bar
 
+from textual.containers import Container, Vertical, Horizontal
+from textual.widgets import Static, Button, Label
+from textual.message import Message
+
 class CPUPanel(Panel):
     """Shows CPU core heat blocks with real data."""
     
     PANEL_NAME = "CPU"
     
+    BINDINGS = [
+        ("k", "kill_process", "Kill Process"),
+        ("plus", "renice_up", "Lower Priority"),
+        ("minus", "renice_down", "Higher Priority"),
+    ]
+
     def __init__(self):
         super().__init__("CPU CORES", "", id="cpu-panel")
         self.core_count = psutil.cpu_count()
@@ -22,9 +32,151 @@ class CPUPanel(Panel):
         self.sampling_rate = 1.0
         self.view_mode = "developer" # cinematic / developer
         self.scaling_mode = "absolute" # absolute / relative
+        self.selected_pid = None # For process control
         
         # Initialize Core
         core.init()
+    
+    def action_kill_process(self):
+        """Kill selected process via keyboard."""
+        if self.selected_pid:
+            core.kill_process(self.selected_pid)
+            self.notify(f"Terminated PID {self.selected_pid}")
+            self.selected_pid = None
+
+    def action_renice_up(self):
+        """Increase nice value (lower priority)."""
+        self._adjust_nice(1)
+
+    def action_renice_down(self):
+        """Decrease nice value (higher priority)."""
+        self._adjust_nice(-1)
+
+    def _adjust_nice(self, delta):
+        if not self.selected_pid: return
+        try:
+            p = psutil.Process(self.selected_pid)
+            new_nice = max(-20, min(19, p.nice() + delta))
+            core.renice_process(self.selected_pid, new_nice)
+            self.notify(f"PID {self.selected_pid} Nice: {new_nice}")
+        except:
+            self.notify("Failed to renice", severity="error")
+
+    def compose_transcendence(self):
+        """Compose the interactive Core Management Console."""
+        with Container(id="cpu-transcendence-layout"):
+            # Top Section: Header & Stats
+            with Horizontal(classes="header-section"):
+                yield Static(id="cpu-hero-header")
+            
+            # Middle: Core Grid
+            with Container(classes="core-section"):
+                yield Static("CORE ARCHITECTURE", classes="section-title")
+                yield Static(id="cpu-core-grid")
+            
+            # Bottom: Process Inspector
+            with Container(classes="process-section"):
+                yield Static("TOP OFFENDER ANALYSIS", classes="section-title")
+                with Horizontal(id="process-control-box"):
+                    yield Static(id="top-process-info", classes="process-info")
+                    with Vertical(id="process-actions"):
+                        yield Button("KILL PID [K]", id="btn-kill", variant="error")
+                        with Horizontal():
+                            yield Button("NICE + [+] ", id="btn-renice-up", variant="warning")
+                            yield Button("NICE - [-] ", id="btn-renice-down", variant="success")
+    
+    def on_button_pressed(self, event: Button.Pressed):
+        """Handle process control buttons."""
+        if not self.selected_pid:
+            return
+            
+        if event.button.id == "btn-kill":
+            res = core.kill_process(self.selected_pid)
+            self.notify(res)
+            self.selected_pid = None
+        elif event.button.id.startswith("btn-renice"):
+            try:
+                p = psutil.Process(self.selected_pid)
+                nice = p.nice()
+                if "up" in event.button.id: # Increase nice value (lower priority)
+                    new_nice = min(19, nice + 1)
+                else: # Decrease nice value (higher priority)
+                    new_nice = max(-20, nice - 1)
+                
+                core.renice_process(self.selected_pid, new_nice)
+                self.notify(f"Reniced PID {self.selected_pid} to {new_nice}")
+            except:
+                self.notify("Failed to renice process", severity="error")
+
+    def update_transcendence(self, screen):
+        """Update the interactive transcendence view."""
+        # 1. Update Header
+        try:
+            avg = self.aggregate_history[-1] if self.aggregate_history else 0
+            freq = psutil.cpu_freq()
+            freq_str = f"{freq.current:.0f} MHz" if freq else "?"
+            
+            # Get Model Name (best effort)
+            import platform
+            model = platform.processor() or "Unknown CPU"
+
+            header = Text()
+            header.append(f"CPU LOAD: {avg:3.0f}%  ", style="bold " + value_to_heat_color(avg))
+            header.append(make_bar(avg, 30, 20), style=value_to_heat_color(avg))
+            header.append(f"   FREQ: {freq_str}   ", style="cyan")
+            header.append(f"MODEL: {model[:20]}...", style="dim")
+            screen.query_one("#cpu-hero-header", Static).update(header)
+        except:
+            pass # Widget might not be ready
+        
+        # 2. Update Core Grid (Visual) PLUS Kernel Stats
+        try:
+            # We'll use a dense block view
+            grid = Text()
+            percentages = core.get_cpu_percents() # This calls direct_os.get_cpu_percents which handles delta logic
+            
+            # Add Kernel Stats at top of grid
+            stats = psutil.cpu_stats()
+            grid.append(f"CTX SWITCH: {stats.ctx_switches:,} | INTERRUPTS: {stats.interrupts:,} | SYSCALLS: {stats.syscalls:,}\n\n", style="dim green")
+            
+            # Split into rows of 8
+            row_len = 8
+            for i, pct in enumerate(percentages):
+                color = value_to_heat_color(pct)
+                # Use a larger block for visual impact
+                block = "███" if pct > 80 else "███" if pct > 40 else "███"
+                val_str = f"{pct:3.0f}%"
+                
+                grid.append(f" CORE {i:02} ", style="dim white")
+                grid.append(f"{val_str} ", style=color)
+                grid.append(block, style=color)
+                grid.append("   ")
+                
+                if (i + 1) % 4 == 0:
+                    grid.append("\n\n")
+            
+            screen.query_one("#cpu-core-grid", Static).update(grid)
+        except:
+            pass
+
+        # 3. Update Top Process (Heuristic: Max CPU)
+        try:
+            procs = core.get_process_list(sort_by='cpu', limit=1)
+            if procs:
+                top = procs[0]
+                self.selected_pid = top['pid']
+                
+                info = Text()
+                info.append(f"PID: {top['pid']}\n", style="bold yellow")
+                info.append(f"NAME: {top['name']}\n", style="bold white")
+                info.append(f"CPU: {top['cpu_percent']}%\n", style="red")
+                # info.append(f"MEM: {top['memory_info'] / 1024 / 1024:.1f} MB", style="cyan")
+                
+                screen.query_one("#top-process-info", Static).update(info)
+            else:
+                screen.query_one("#top-process-info", Static).update("No active processes identified.")
+        except:
+            pass
     
     def update_data(self):
         # Use Direct OS engine for CPU data

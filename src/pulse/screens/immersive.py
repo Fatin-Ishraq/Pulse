@@ -10,8 +10,7 @@ class ImmersiveScreen(Screen):
     BINDINGS = [
         ("escape", "app.pop_screen", "Back to Grid"),
         ("x", "app.pop_screen", "Back to Grid"),
-        ("m", "cycle_mode", "Toggle Mode"),
-        ("r", "toggle_rate", "Toggle Rate"),
+        ("p", "toggle_rate", "Toggle Precision"),
         ("s", "cycle_scale", "Toggle Scale"),
         ("f", "optimize", "Optimize"),
         ("q", "quit", "Quit"),
@@ -53,10 +52,15 @@ class ImmersiveScreen(Screen):
         
     def compose(self):
         with Container(id="hero-console"):
-            yield Static(id="transcendence-content")
+            # Dynamic Composition: Check if panel supports interactive transcendence
+            if hasattr(self.source_panel, "compose_transcendence"):
+                yield from self.source_panel.compose_transcendence()
+            else:
+                # Fallback: Static Text View
+                yield Static(id="transcendence-content")
+            
             with Horizontal(id="control-bar"):
-                yield Button("VIEW MODE [M]", id="btn-mode", variant="primary")
-                yield Button("PRECISION [R]", id="btn-rate", variant="success")
+                yield Button("PRECISION [P]", id="btn-rate", variant="success")
                 yield Button("SCALING [S]", id="btn-scale", variant="warning")
                 yield Button("OPTIMIZE [F]", id="btn-optimize", variant="default")
                 yield Button("BACK [X]", id="btn-back", variant="error")
@@ -67,7 +71,6 @@ class ImmersiveScreen(Screen):
         # Container style
         self.styles.align = ("center", "middle")
         # Hide buttons based on panel capabilities
-        self.query_one("#btn-mode").visible = hasattr(self.source_panel, "view_mode")
         self.query_one("#btn-rate").visible = hasattr(self.source_panel, "sampling_rate")
         self.query_one("#btn-scale").visible = hasattr(self.source_panel, "scaling_mode")
         self.query_one("#btn-optimize").visible = hasattr(self.source_panel, "optimize") or hasattr(self.source_panel, "action_optimize")
@@ -75,11 +78,39 @@ class ImmersiveScreen(Screen):
         self.refresh_view()
         # Start with standard 1.0s interval
         self.refresh_timer = self.set_interval(1.0, self.refresh_view)
+        
+        # Auto-Focus Control Logic
+        # Try to focus the main interactive table if present
+        try:
+            self.query_one("DataTable").focus()
+        except:
+            pass
+
+    async def on_key(self, event):
+        """Forward keys to source panel bindings."""
+        if hasattr(self.source_panel, "BINDINGS"):
+            for b in self.source_panel.BINDINGS:
+                # Handle Binding objects vs Tuple shortcuts
+                b_key = b.key if hasattr(b, "key") else b[0]
+                b_action = b.action if hasattr(b, "action") else b[1]
+                
+                if b_key == event.key:
+                    action_name = b_action
+                    method_name = f"action_{action_name}"
+                    if hasattr(self.source_panel, method_name):
+                        getattr(self.source_panel, method_name)()
+                        event.stop()
+                        return
+
+    def on_data_table_row_selected(self, event):
+        """Handle Enter/Select on Tables."""
+        if hasattr(self.source_panel, "action_select_item"):
+            self.source_panel.action_select_item()
+        elif hasattr(self.source_panel, "on_table_selected"):
+             self.source_panel.on_table_selected(event)
 
     def on_button_pressed(self, event: Button.Pressed):
-        if event.button.id == "btn-mode":
-            self.action_cycle_mode()
-        elif event.button.id == "btn-rate":
+        if event.button.id == "btn-rate":
             self.action_toggle_rate()
         elif event.button.id == "btn-scale":
             self.action_cycle_scale()
@@ -87,6 +118,16 @@ class ImmersiveScreen(Screen):
             self.action_optimize()
         elif event.button.id == "btn-back":
             self.app.pop_screen()
+        else:
+            # Delegate other buttons (panel-specific) to the source panel
+            if hasattr(self.source_panel, "on_button_pressed"):
+                self.source_panel.on_button_pressed(event)
+                # Re-focus table after button press to keep keyboard working
+                try: self.query_one("DataTable").focus()
+                except: pass
+
+    def action_toggle_precision(self):
+        self.action_toggle_rate()
 
     def action_optimize(self):
         """Trigger optimization on the source panel if supported."""
@@ -95,11 +136,6 @@ class ImmersiveScreen(Screen):
         elif hasattr(self.source_panel, "optimize"):
             self.source_panel.optimize()
         self.refresh_view()
-
-    def action_cycle_mode(self):
-        if hasattr(self.source_panel, "view_mode"):
-            self.source_panel.view_mode = "cinematic" if self.source_panel.view_mode == "developer" else "developer"
-            self.refresh_view()
 
     def action_toggle_rate(self):
         if hasattr(self.source_panel, "sampling_rate"):
@@ -116,10 +152,15 @@ class ImmersiveScreen(Screen):
             self.refresh_view()
 
     def refresh_view(self):
+        # In interactive mode (widgets), the panel manages its own updates via its own timer/logic
+        # We only need to drive updates for the static text view fallback
         try:
             content = self.query_one("#transcendence-content", Static)
-            # console = self.query_one("#hero-console") # No longer used for styling
         except:
+            # If no static content widget, we assume interactive mode is handling itself
+            # checking if source panel needs explicit update call though
+            if hasattr(self.source_panel, "update_transcendence"):
+                self.source_panel.update_transcendence(self)
             return
         
         # In Transcendence Mode, we allow the screen to drive the panel's updates

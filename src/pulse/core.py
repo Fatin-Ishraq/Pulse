@@ -11,3 +11,5 @@ get_cpu_percents = direct_os.get_cpu_percents
 get_process_list = direct_os.get_process_list
 get_network_stats = direct_os.get_network_stats
 get_disk_info = direct_os.get_disk_info
+kill_process = direct_os.kill_process
+renice_process = direct_os.renice_process

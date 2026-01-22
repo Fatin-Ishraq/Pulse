@@ -3,13 +3,19 @@ import psutil
 from rich.text import Text
 
 from pulse.panels.base import Panel
-from pulse.ui_utils import value_to_spark
+from pulse.ui_utils import value_to_spark, value_to_heat_color, make_bar
+
+from textual.containers import Container, Vertical, Horizontal
+from textual.widgets import Static, Button, DataTable
+from textual.binding import Binding
 
 class NetworkPanel(Panel):
     """Network upload/download activity."""
     
     BINDINGS = [
-        ("f", "optimize", "Reset Session"),
+        Binding("f", "optimize", "Reset Counters"),
+        Binding("k", "kill_connection", "Kill PID"),
+        Binding("r", "refresh_stats", "Refresh"),
     ]
     
     def __init__(self):
@@ -24,7 +30,201 @@ class NetworkPanel(Panel):
         # Transcendence Control States
         self.sampling_rate = 1.0
         self.view_mode = "developer" # cinematic / developer
-        self.scaling_mode = "auto" # auto / kb / mb
+        self.selected_pid = None
+
+    def compose_transcendence(self):
+        """Interactive Network Matrix."""
+        with Container(id="net-transcendence-layout"):
+            # Top: Hero Stats
+            with Horizontal(classes="header-section"):
+                yield Static(id="net-hero-header")
+            
+            # Middle: Interactive Table
+            yield DataTable(id="net_table", cursor_type="row", zebra_stripes=True)
+            
+            # Bottom: Actions
+            with Horizontal(classes="footer-section", id="net-actions"):
+                yield Button("KILL PID [K]", id="btn_kill", variant="error")
+                yield Button("REFRESH [R]", id="btn_refresh", variant="warning")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "btn_kill":
+            self.action_kill_connection()
+        elif event.button.id == "btn_refresh":
+            self.action_refresh_stats()
+
+    def action_refresh_stats(self):
+        self.update_data()
+        self.refresh_content(force=True)
+
+    def action_kill_connection(self):
+        """Kill the process owning the selected connection."""
+        try:
+            table = self.app.screen.query_one("#net_table", DataTable)
+            if table.cursor_row is None: return
+            
+            # Key is PID_PORT (e.g. "1234_8080") or "Unknown_..."
+            raw_key = table.coordinate_to_cell_key(table.cursor_coordinate).row_key.value
+            
+            if "Unknown" in raw_key:
+                self.notify("Cannot kill unknown process", severity="error")
+                return
+                
+            # Extract PID (first part of key)
+            pid_str = raw_key.split("_")[0]
+            pid = int(pid_str)
+            
+            try:
+                # Try standard kill
+                proc = psutil.Process(pid)
+                proc.kill()
+                self.notify(f"Terminated process {pid}")
+            except psutil.AccessDenied:
+                # Fallback to Force Kill (Windows)
+                if platform.system() == "Windows":
+                    self.notify(f"Access Denied. Attempting FORCE KILL on {pid}...", severity="warning")
+                    subprocess.run(["taskkill", "/F", "/PID", str(pid)], capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)
+                    # Check if it died?
+                    try:
+                        psutil.Process(pid)
+                        self.notify("Force Kill Failed. Run Pulse as Admin.", severity="error")
+                    except psutil.NoSuchProcess:
+                        self.notify(f"Force Kill Successful: {pid}")
+                else:
+                    self.notify("Access Denied (Run as Root)", severity="error")
+            except psutil.NoSuchProcess:
+                self.notify(f"Process {pid} no longer exists.")
+                
+            # Optimistic UI update (remove row immediately)
+            table.remove_row(raw_key)
+            self.update_data()
+            
+        except Exception as e:
+            self.notify(f"Kill error: {e}", severity="error")
+
+    def refresh_content(self, force=False):
+        if hasattr(self.app.screen, "query_one"):
+             try:
+                 self.update_transcendence(self.app.screen)
+             except: pass
+
+    def update_transcendence(self, screen):
+        """Update interactive network view."""
+        self.update_data() # Update global counters
+        
+        # 1. Hero Header
+        try:
+            up = self.up_history[-1] if self.up_history else 0
+            down = self.down_history[-1] if self.down_history else 0
+            header_widget = screen.query_one("#net-hero-header", Static)
+            
+            head = Text()
+            head.append(f" ▲ {up:6.1f} KB/s  ", style="bold yellow")
+            head.append(make_bar(min(up, 1000), 1000, 15), style="yellow")
+            head.append(f"   ▼ {down:6.1f} KB/s  ", style="bold cyan")
+            head.append(make_bar(min(down, 1000), 1000, 15), style="cyan")
+            
+            # Interface Summary
+            stats = psutil.net_if_stats()
+            active_nics = [n for n, s in stats.items() if s.isup]
+            head.append(f"   INTERFACES: {len(active_nics)} UP", style="dim")
+            
+            header_widget.update(head)
+            
+            # 2. DataTable
+            table = screen.query_one("#net_table", DataTable)
+            
+            # Setup columns
+            cols = list(table.columns.values())
+            if not cols:
+                table.add_columns("PROTO", "L-WT", "LOCAL IP", "REMOTE IP", "STATUS", "PID", "PROCESS")
+            
+            # Get Connections
+            conns = psutil.net_connections(kind='inet')
+            # Filter: Show established or listen (skip time_wait to reduce noise?)
+            # Letting user see everything for now, maybe sort by state
+            active_conns = sorted(conns, key=lambda c: (c.status != 'ESTABLISHED', c.laddr.port))
+            
+            # Prune limit
+            active_conns = active_conns[:200]
+            
+            seen_pids = set()
+            current_rows = set(table.rows.keys())
+            
+            # Reuse logic to update rows
+            for c in active_conns:
+                try:
+                    pid = c.pid if c.pid else "Unknown"
+                    key = str(pid) + "_" + str(c.laddr.port) # Unique key per socket
+                    seen_pids.add(key)
+                    
+                    row_data = []
+                    
+                    # Proto
+                    row_data.append("TCP" if c.type == 1 else "UDP")
+                    # L-Port (Weight/Port)
+                    row_data.append(str(c.laddr.port))
+                    # Local
+                    row_data.append(f"{c.laddr.ip}")
+                    # Remote
+                    r_str = f"{c.raddr.ip}:{c.raddr.port}" if c.raddr else "*"
+                    row_data.append(r_str)
+                    # Status
+                    style = "green" if c.status == "ESTABLISHED" else "dim"
+                    row_data.append(Text(c.status, style=style))
+                    # PID
+                    row_data.append(str(pid))
+                    # Process
+                    if pid != "Unknown":
+                        try:
+                            p = psutil.Process(pid)
+                            row_data.append(p.name())
+                        except:
+                            row_data.append("?")
+                    else:
+                        row_data.append("System")
+                        
+                    # Row Key needs to be PID for killing? 
+                    # Actually valid key needs to be unique for the ROW.
+                    # But action_kill wants PID. We can parse it from cell or use a mapping.
+                    # I'll use `pid` as key, BUT one pid has multiple sockets. 
+                    # So key must be `key` (pid_port). But then `coordinate_to_cell_key` returns that.
+                    # I need to store PID in row logic.
+                    
+                    if key in current_rows:
+                        # Update (Status might change)
+                         # Updating every cell is expensive. 
+                         # For network, constant churn. Let's mostly just Add/Remove.
+                         pass 
+                    else:
+                        # To enable killing, the row key should probably simple, 
+                        # but we need to extract PID.
+                        # I'll make the row key = PID (string). 
+                        # WAIT: Duplicate PIDs (chrome has 50 conns). 
+                        # DataTable keys must be unique. 
+                        # So I cannot use PID as row key. 
+                        # I will use `key` (pid_port) as row key.
+                        # Then in kill action, I will parse the PID column.
+                        table.add_row(*row_data, key=key)
+
+                except: continue
+            
+            # Remove old
+            for k in current_rows - seen_pids:
+                 table.remove_row(k)
+                 
+                 
+        except Exception:
+            pass
+
+    def get_transcendence_view(self) -> Text:
+         # Legacy fallback
+         return super().get_transcendence_view()
+         
+    def get_detailed_view(self) -> Text:
+         return super().get_detailed_view() # Guard
+
+
 
     def action_optimize(self):
         """Reset network session counters."""

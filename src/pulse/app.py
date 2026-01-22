@@ -5,7 +5,7 @@ A cinematic terminal-based system monitor. Every panel animates.
 Nothing is static. This is not a dashboard — it's an instrument panel.
 
 Controls:
-  T     - Cycle themes: Bridge → Reactor → Matrix → Vapor → Mono
+  T     - Cycle themes: Nord → Dracula → Monokai → Dark → Solarized → Gruvbox
   Tab   - Focus next panel (highlighted border + detailed view)
   Shift+Tab - Focus previous panel
   F     - Freeze/unfreeze updates
@@ -13,8 +13,11 @@ Controls:
   Q     - Quit
 """
 
-from textual.app import App
+from typing import Iterable
+
+from textual.app import App, SystemCommand
 from textual.containers import Container, Vertical
+from textual.screen import Screen
 from textual.widgets import Header, Footer
 
 
@@ -26,7 +29,7 @@ from pulse.panels.memory import MemoryPanel
 from pulse.panels.disk import DiskIOPanel
 from pulse.panels.network import NetworkPanel
 from pulse.panels.storage import StoragePanel
-from pulse.panels.kernel import KernelThermalPanel
+from pulse.panels.system import SystemPanel
 from pulse.panels.process import ProcessPanel
 from pulse.panels.insight import InsightPanel
 from pulse.panels.main_view import MainViewPanel
@@ -51,6 +54,7 @@ class PulseApp(App):
     """A cinematic terminal-based system monitor."""
     
     TITLE = "P U L S E"
+    COMMAND_PALETTE_BINDING = "b"  # Open command palette with B key
     
     # Import theme CSS
     CSS_PATH = "themes.tcss"
@@ -72,6 +76,16 @@ class PulseApp(App):
         height: 1fr;
         overflow-y: auto;
         background: transparent;
+        opacity: 0.6;
+        transition: opacity 300ms;
+    }
+    
+    Panel:focus-within {
+        opacity: 1.0;
+    }
+    
+    #main-panel {
+        opacity: 1.0;
     }
     
     .alarm {
@@ -97,7 +111,57 @@ class PulseApp(App):
     #main-panel { height: 1.5fr; }
     #process-panel { height: 1fr; }
     #insight-panel { height: 1fr; }
-    #cpu-panel, #memory-panel, #net-panel, #disk-panel, #storage-panel, #kernel-panel { height: 1fr; }
+    #cpu-panel, #memory-panel, #net-panel, #disk-panel, #storage-panel, #system-panel { height: 1fr; }
+
+    /* CPU Transcendence Layout */
+    #cpu-transcendence-layout, #mem-transcendence-layout, #net-transcendence-layout, #proc-transcendence-layout, #storage-transcendence-layout {
+        layout: vertical;
+        padding: 1;
+    }
+    .header-section {
+        height: auto;
+        padding-bottom: 1;
+        border-bottom: solid $primary-background;
+    }
+    .core-section {
+        height: 1fr;
+        padding: 1 0;
+    }
+    .process-section {
+        height: 12;
+        border-top: solid $primary-background;
+        padding-top: 1;
+    }
+    .section-title {
+        color: $text-muted;
+        text-style: bold;
+        padding-bottom: 1;
+    }
+    #process-control-box {
+        height: auto;
+    }
+    .process-info {
+        width: 1fr;
+    }
+    #process-actions {
+        width: 30;
+    }
+    #process-actions Button {
+        width: 100%;
+        margin-bottom: 1;
+    }
+    
+    #storage-actions, #net-actions {
+        width: 100%;
+        height: auto;
+        dock: bottom;
+        padding-top: 1;
+        border-top: solid $primary-background;
+    }
+    #storage-actions Button, #net-actions Button {
+        margin-right: 1;
+        min-width: 16;
+    }
 
     """
     
@@ -105,12 +169,63 @@ class PulseApp(App):
         ("q", "quit", "Quit"),
         ("t", "cycle_theme", "Theme"),
         ("f", "freeze", "Freeze"),
+        # Arrow Key Navigation
+        ("up", "move_focus('up')", "Up"),
+        ("down", "move_focus('down')", "Down"),
+        ("left", "move_focus('left')", "Left"),
+        ("right", "move_focus('right')", "Right"),
+        
         ("tab", "focus_next", "Next"),
         ("shift+tab", "focus_previous", "Prev"),
         ("question_mark", "help", "Help"),
         ("h", "help", "Help"),
         ("x", "maximize_immersive", "Maximize"),
     ]
+    
+    def action_move_focus(self, direction: str):
+        """Intelligent spatial navigation for the grid."""
+        # Grid Layout:
+        # Col 0 (Left): CPU, Mem, Storage
+        # Col 1 (Mid): MainView, Process, Disk
+        # Col 2 (Right): Net, Kernel, Insight
+        
+        # Get current focused widget
+        current = self.focused
+        if not isinstance(current, Panel):
+            # Default to main panel if focus is lost/weird
+            self.query_one("#main-panel").focus()
+            return
+
+        # Define the grid map (Panel IDs)
+        grid_map = [
+            ["cpu-panel", "main-panel", "net-panel"],        # Row 0
+            ["memory-panel", "process-panel", "system-panel"], # Row 1
+            ["storage-panel", "disk-panel", "insight-panel"]   # Row 2
+        ]
+        
+        # Find current position
+        r, c = -1, -1
+        current_id = current.id
+        for row_idx, row in enumerate(grid_map):
+            if current_id in row:
+                r, c = row_idx, row.index(current_id)
+                break
+        
+        if r == -1: return # Should not happen for panels
+        
+        # Calculate new position
+        if direction == "up":
+            r = max(0, r - 1)
+        elif direction == "down":
+            r = min(len(grid_map) - 1, r + 1)
+        elif direction == "left":
+            c = max(0, c - 1)
+        elif direction == "right":
+            c = min(len(grid_map[0]) - 1, c + 1)
+            
+        # Focus new widget
+        target_id = grid_map[r][c]
+        self.query_one(f"#{target_id}").focus()
     
     def action_maximize_immersive(self):
         """Maximize focused widget into Immersive Transcendence mode."""
@@ -122,6 +237,21 @@ class PulseApp(App):
     def action_help(self):
         """Show help screen."""
         self.push_screen(HelpScreen())
+    
+    def get_system_commands(self, screen: Screen) -> Iterable[SystemCommand]:
+        """Filter system commands to remove maximize and limit themes."""
+        for cmd in super().get_system_commands(screen):
+            title_lower = cmd.title.lower()
+            # Skip maximize command (we keep the X key shortcut, just hide from palette)
+            if "maximize" in title_lower:
+                continue
+            # Filter theme commands to only our 6 themes
+            if title_lower.startswith("theme:"):
+                # Extract theme name after "theme: "
+                theme_name = cmd.title.split(": ", 1)[1].lower() if ": " in cmd.title else ""
+                if theme_name not in THEMES:
+                    continue
+            yield cmd
     
     def __init__(self):
         super().__init__()
@@ -146,7 +276,7 @@ class PulseApp(App):
             # Right Sidebar (3 widgets)
             with Vertical(id="sidebar-right"):
                 yield NetworkPanel()
-                yield KernelThermalPanel()
+                yield SystemPanel()
                 yield InsightPanel()
         yield Footer()
     
@@ -172,10 +302,21 @@ class PulseApp(App):
         focused = event.widget
         main_panel = self.query_one("#main-panel", MainViewPanel)
         
-        # If focused widget is a Panel (but not the main panel), show its details
-        if isinstance(focused, Panel) and focused.id != "main-panel":
-            main_panel.focused_panel = focused
-            main_panel.update_data()  # Immediately update to show new details
+        # Find if focused widget is a Panel or inside one
+        target_panel = None
+        if isinstance(focused, Panel):
+            target_panel = focused
+        else:
+            # Check ancestors (e.g. if a Button inside a Panel is focused)
+            for ancestor in focused.ancestors:
+                if isinstance(ancestor, Panel):
+                    target_panel = ancestor
+                    break
+        
+        # Update Main Panel content
+        if target_panel and target_panel.id != "main-panel":
+            main_panel.focused_panel = target_panel
+            main_panel.update_data()
         else:
             main_panel.focused_panel = None
     
@@ -192,7 +333,7 @@ class PulseApp(App):
         self.query_one("#net-panel", NetworkPanel).update_data()
         self.query_one("#disk-panel", DiskIOPanel).update_data()
         self.query_one("#storage-panel", StoragePanel).update_data()
-        self.query_one("#kernel-panel", KernelThermalPanel).update_data()
+        self.query_one("#system-panel", SystemPanel).update_data()
         self.query_one("#process-panel", ProcessPanel).update_data()
         self.query_one("#main-panel", MainViewPanel).update_data()
         self.query_one("#insight-panel", InsightPanel).update_data()
@@ -202,6 +343,9 @@ class PulseApp(App):
         """Cycle through available themes."""
         self.theme_index = (self.theme_index + 1) % len(THEMES)
         self.apply_theme()
+        # explicity set sub_title again to ensure update, though apply_theme does it
+        # The issue might be that apply_theme uses `self.sub_title = ...` which should work.
+        # Let's ensure refresh_data doesn't overwrite it or something.
         self.refresh_data()  # Refresh to show visual updates immediately
     
     def action_freeze(self):
