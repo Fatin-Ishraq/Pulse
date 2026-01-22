@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pulse-monitor"
-version = "0.3.0"
+version = "0.3.1"
 description = "A cinematic terminal-based system monitor with Direct OS optimization"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -24,6 +24,15 @@ dependencies = [
     "textual>=2.0.0",
     "rich>=13.0.0",
     "psutil>=5.9.0",
+    "tomli>=2.0.0; python_version < '3.11'",
+    "tomli-w>=1.0.0",
+    "docker>=6.0.0",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.20.0",
 ]
 
 [project.urls]

@@ -29,7 +29,7 @@ from pulse.panels.memory import MemoryPanel
 from pulse.panels.disk import DiskIOPanel
 from pulse.panels.network import NetworkPanel
 from pulse.panels.storage import StoragePanel
-from pulse.panels.system import SystemPanel
+from pulse.panels.docker import DockerPanel
 from pulse.panels.process import ProcessPanel
 from pulse.panels.insight import InsightPanel
 from pulse.panels.main_view import MainViewPanel
@@ -38,6 +38,7 @@ from pulse.panels.main_view import MainViewPanel
 from pulse.screens.boot import BootScreen
 from pulse.screens.help import HelpScreen
 from pulse.screens.immersive import ImmersiveScreen
+from pulse.config import load_config, save_config
 
 
 # Theme definitions
@@ -111,7 +112,7 @@ class PulseApp(App):
     #main-panel { height: 1.5fr; }
     #process-panel { height: 1fr; }
     #insight-panel { height: 1fr; }
-    #cpu-panel, #memory-panel, #net-panel, #disk-panel, #storage-panel, #system-panel { height: 1fr; }
+    #cpu-panel, #memory-panel, #net-panel, #disk-panel, #storage-panel, #docker-panel { height: 1fr; }
 
     /* CPU Transcendence Layout */
     #cpu-transcendence-layout, #mem-transcendence-layout, #net-transcendence-layout, #proc-transcendence-layout, #storage-transcendence-layout {
@@ -151,14 +152,14 @@ class PulseApp(App):
         margin-bottom: 1;
     }
     
-    #storage-actions, #net-actions {
+    #storage-actions, #net-actions, #proc-actions {
         width: 100%;
         height: auto;
         dock: bottom;
         padding-top: 1;
         border-top: solid $primary-background;
     }
-    #storage-actions Button, #net-actions Button {
+    #storage-actions Button, #net-actions Button, #proc-actions Button {
         margin-right: 1;
         min-width: 16;
     }
@@ -199,7 +200,7 @@ class PulseApp(App):
         # Define the grid map (Panel IDs)
         grid_map = [
             ["cpu-panel", "main-panel", "net-panel"],        # Row 0
-            ["memory-panel", "process-panel", "system-panel"], # Row 1
+            ["memory-panel", "process-panel", "docker-panel"], # Row 1
             ["storage-panel", "disk-panel", "insight-panel"]   # Row 2
         ]
         
@@ -256,7 +257,16 @@ class PulseApp(App):
     def __init__(self):
         super().__init__()
         self.frozen = False
-        self.theme_index = 0  # Start with Nord theme
+        
+        # Load Config
+        self.config = load_config()
+        
+        # Determine theme index from config
+        saved_theme = self.config.get("ui", {}).get("theme", "nord")
+        try:
+            self.theme_index = THEMES.index(saved_theme)
+        except ValueError:
+            self.theme_index = 0
     
     def compose(self):
         yield Header()
@@ -276,7 +286,7 @@ class PulseApp(App):
             # Right Sidebar (3 widgets)
             with Vertical(id="sidebar-right"):
                 yield NetworkPanel()
-                yield SystemPanel()
+                yield DockerPanel(id="docker-panel")
                 yield InsightPanel()
         yield Footer()
     
@@ -288,7 +298,8 @@ class PulseApp(App):
         # Apply initial theme
         self.apply_theme()
         
-        self.set_interval(1.0, self.refresh_data)
+        refresh_rate = self.config.get("core", {}).get("refresh_rate", 1.0)
+        self.set_interval(refresh_rate, self.refresh_data)
         self.refresh_data()
     
     def apply_theme(self):
@@ -333,7 +344,7 @@ class PulseApp(App):
         self.query_one("#net-panel", NetworkPanel).update_data()
         self.query_one("#disk-panel", DiskIOPanel).update_data()
         self.query_one("#storage-panel", StoragePanel).update_data()
-        self.query_one("#system-panel", SystemPanel).update_data()
+        self.query_one("#docker-panel", DockerPanel).update_data()
         self.query_one("#process-panel", ProcessPanel).update_data()
         self.query_one("#main-panel", MainViewPanel).update_data()
         self.query_one("#insight-panel", InsightPanel).update_data()
@@ -343,6 +354,14 @@ class PulseApp(App):
         """Cycle through available themes."""
         self.theme_index = (self.theme_index + 1) % len(THEMES)
         self.apply_theme()
+        
+        # Save preference
+        current_theme = THEMES[self.theme_index]
+        if "ui" not in self.config:
+            self.config["ui"] = {}
+        self.config["ui"]["theme"] = current_theme
+        save_config(self.config)
+
         # explicity set sub_title again to ensure update, though apply_theme does it
         # The issue might be that apply_theme uses `self.sub_title = ...` which should work.
         # Let's ensure refresh_data doesn't overwrite it or something.

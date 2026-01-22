@@ -25,6 +25,10 @@ class DiskIOPanel(Panel):
             self.last_io = psutil.disk_io_counters()
         except:
             self.last_io = None
+        
+        # Per-disk state for transcendence rate calc
+        self.last_per_disk_io = {}
+
         self.current_read_lat = 0.0
         self.current_write_lat = 0.0
         
@@ -117,64 +121,71 @@ class DiskIOPanel(Panel):
         
         # Init Cols
         if not table.columns:
-            table.add_columns("DEVICE", "MOUNT", "READ RATE", "WRITE RATE", "TOTAL READ", "TOTAL WRITE", "BUSY")
+            table.add_columns("DEVICE", "MOUNT", "READ/s", "WRITE/s", "ACTIVITY", "TOTAL DATA")
         
         try:
             io_counters = psutil.disk_io_counters(perdisk=True)
             parts = {p.device: p.mountpoint for p in psutil.disk_partitions()}
             
             current_rows = set(table.rows.keys())
-            seen_devs = set()
             
-            total_r_rate = 0
-            total_w_rate = 0
-            
-            # We need persistent state for per-disk rate calculation or just show cumulative?
-            # Rates are hard without per-disk history in this class (we only store global history).
-            # For now, we'll show Cumulative Totals and derive instantaneous rate if possible, 
-            # OR just show cumulative.
-            # Let's show Cumulative for now, and maybe "Activity" if available.
-            # actually psutil raw values are cumulative.
-            # To show Rate, we need diffs. 
-            # Detailed per-disk rate tracking is complex for this step.
-            # Let's stick to Total Data Transferred and Busy Time for this version.
+            # Timestamp for rate calc
+            import time
+            now = time.time()
             
             for dev, io in io_counters.items():
                 mount = parts.get(dev, parts.get(dev.replace('/dev/', ''), "?"))
                 
-                seen_devs.add(dev)
+                # Rate Calculation
+                r_rate_mb = 0.0
+                w_rate_mb = 0.0
                 
+                if dev in self.last_per_disk_io:
+                    last_io, last_time = self.last_per_disk_io[dev]
+                    dt = now - last_time
+                    if dt > 0:
+                        r_rate_mb = (io.read_bytes - last_io.read_bytes) / (1024**2) / dt
+                        w_rate_mb = (io.write_bytes - last_io.write_bytes) / (1024**2) / dt
+                
+                # Update state
+                self.last_per_disk_io[dev] = (io, now)
+                
+                # Format Data
                 r_gb = io.read_bytes / (1024**3)
                 w_gb = io.write_bytes / (1024**3)
-                busy = f"{io.busy_time/1000:.1f}s" if hasattr(io, 'busy_time') else "N/A"
+                total_str = f"R:{r_gb:.1f}G W:{w_gb:.1f}G"
                 
-                # Colorize large transfers
-                r_style = value_to_heat_color(min(r_gb * 10, 100))
-                w_style = value_to_heat_color(min(w_gb * 10, 100))
+                # Activity Bar (Max 50 MB/s ref for visualization)
+                max_speed = 50.0 
+                activity_val = max(r_rate_mb, w_rate_mb)
+                bar_color = "green" if w_rate_mb < r_rate_mb else "yellow"
+                if activity_val > 100: bar_color = "red"
+                
+                bar = make_bar(min(activity_val, max_speed), max_speed, 20)
+                activity_cell = Text(f"{bar}", style=bar_color)
+                
+                # Styles
+                r_style = value_to_heat_color(min(r_rate_mb * 5, 100))
+                w_style = value_to_heat_color(min(w_rate_mb * 5, 100))
                 
                 row = [
                     dev,
                     mount,
-                    Text(f"---", style="dim"), # Rate placeholder (requires state)
-                    Text(f"---", style="dim"),
-                    Text(f"{r_gb:6.2f} GB", style=r_style),
-                    Text(f"{w_gb:6.2f} GB", style=w_style),
-                    busy
+                    Text(f"{r_rate_mb:5.1f} MB/s", style=r_style),
+                    Text(f"{w_rate_mb:5.1f} MB/s", style=w_style),
+                    activity_cell,
+                    Text(total_str, style="dim")
                 ]
                 
                 if dev in current_rows:
                     for i, val in enumerate(row):
-                        table.update_cell(dev, list(table.columns.keys())[i], val)
+                        key = list(table.columns.keys())[i]
+                        table.update_cell(dev, key, val)
                 else:
                     table.add_row(*row, key=dev)
             
             # Update Header
-            glob = psutil.disk_io_counters()
-            r_rate = self.read_history[-1] if self.read_history else 0
-            w_rate = self.write_history[-1] if self.write_history else 0
-            # Note: history stores calculated MB/s roughly
-            
-            header.update(f"DISK I/O MATRIX   GLOBAL READ: {r_rate/2:.1f} MB/s   GLOBAL WRITE: {w_rate/2:.1f} MB/s")
+            header.update(f"DISK I/O MATRIX   SCANNING {len(io_counters)} DEVICES")
             
         except Exception as e:
             header.update(f"Disk Telemetry Error: {e}")
