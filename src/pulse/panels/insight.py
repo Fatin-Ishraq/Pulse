@@ -6,6 +6,7 @@ from rich.text import Text
 from pulse.panels.base import Panel
 from pulse.ui_utils import value_to_spark, value_to_heat_color, make_bar
 
+
 class InsightPanel(Panel):
     """Proactive system intelligence and session analytics."""
     
@@ -21,13 +22,18 @@ class InsightPanel(Panel):
             "disk_lat": 0.0
         }
         self.tension_score = 0
-        self.history = deque(maxlen=80) # Expanded for high-res
+        self.history = deque(maxlen=80)
         self.start_time = datetime.now()
         
         # Transcendence Control States
-        self.sampling_rate = 1.0
-        self.view_mode = "developer" # cinematic / developer
+        self.sampling_rate = 0.05  # Fast refresh for Aether (20 FPS)
+        self.view_mode = "aether"  # aether / developer
         self.scaling_mode = "auto"
+        
+        # Aether Engine (lazy init)
+        self._aether_engine = None
+        self._aether_width = 80
+        self._aether_height = 24
         
         # Animation state for "Neural" analysis
         self.thought_idx = 0
@@ -39,41 +45,45 @@ class InsightPanel(Panel):
             "Optimizing thermal dissipation models...",
             "Predicting future resource contention..."
         ]
+    
+    def _get_aether_engine(self):
+        """Lazy initialization of the Aether engine."""
+        if self._aether_engine is None:
+            from pulse.aether.engine import AetherEngine
+            self._aether_engine = AetherEngine(self._aether_width, self._aether_height)
+        return self._aether_engine
+    
+    def set_aether_size(self, width: int, height: int):
+        """Set the Aether canvas size."""
+        self._aether_width = width
+        self._aether_height = height
+        if self._aether_engine:
+            self._aether_engine.resize(width, height)
 
     def get_transcendence_view(self) -> Text:
-        """Ultimate Heuristic Insight Engine."""
+        """Render the Aether visualization or developer stats."""
         text = Text()
-        text.append(f"NEURAL INSIGHT ENGINE ", style="bold")
-        text.append(f"[{self.view_mode.upper()} MODE]\n", style="cyan")
         
-        if self.view_mode == "cinematic":
-            # Heuristic "AI" thought process
-            text.append("\nLIVE BOTTLENECK INFERENCE\n", style="cyan")
+        if self.view_mode == "aether":
+            # === AETHER MODE ===
+            engine = self._get_aether_engine()
             
-            # Simulated neural activity
-            thought = self.thoughts[self.thought_idx % len(self.thoughts)]
-            self.thought_idx += 1
+            # Render a frame
+            frame = engine.render_frame()
+            status = engine.get_status_line()
+            atmosphere = engine.get_atmosphere_char()
             
-            text.append(f"  🧠 {thought}\n", style="italic")
+            # Build the output
+            text.append(f" {atmosphere} ", style="bold cyan")
+            text.append(status, style="dim")
+            text.append(f" {atmosphere}\n\n", style="bold cyan")
+            text.append(frame, style="cyan")
             
-            # Real performance correlation
-            cpu = psutil.cpu_percent()
-            mem = psutil.virtual_memory().percent
-            
-            text.append("\nSUBSYSTEM HEALTH MATRIX\n", style="dim")
-            text.append(f"  COMPUTE: {make_bar(cpu, 100, 20)} {cpu:>3.0f}%\n", style=value_to_heat_color(cpu))
-            text.append(f"  MEMORY:  {make_bar(mem, 100, 20)} {mem:>3.0f}%\n", style=value_to_heat_color(mem))
-
-            # Bottleneck Recommendation
-            text.append("\nENGINE RECOMMENDATION\n", style="cyan")
-            if cpu > 80:
-                text.append("  [!] Critical compute saturation. Consider offloading background tasks.\n", style="orange1")
-            elif mem > 90:
-                text.append("  [!] Memory pressure high. Recommended action: Flush disk caches.\n", style="red")
-            else:
-                text.append("  [✓] All subsystems operating at peak efficiency.\n", style="green")
-        else:
+        elif self.view_mode == "developer":
             # Developer Mode: Session Statistics
+            text.append("NEURAL INSIGHT ENGINE ", style="bold")
+            text.append("[DEVELOPER MODE]\n", style="cyan")
+            
             text.append("\nSESSION PEAK METRICS\n", style="cyan")
             text.append(f"  CPU Peak:        {self.peaks['cpu']:>5.1f}%\n", style="cyan")
             text.append(f"  Memory Peak:     {self.peaks['mem']:>5.1f}%\n", style="cyan")
@@ -106,7 +116,7 @@ class InsightPanel(Panel):
         self.peaks["mem"] = max(self.peaks["mem"], mem)
         
         # Calculate Tension (0-100)
-        self.tension_score = (cpu * 0.4 + mem * 0.4 + 20) # Simplified baseline
+        self.tension_score = (cpu * 0.4 + mem * 0.4 + 20)
         self.tension_score = min(100, self.tension_score)
         self.history.append(self.tension_score)
         

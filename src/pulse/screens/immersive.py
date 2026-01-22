@@ -75,16 +75,36 @@ class ImmersiveScreen(Screen):
         self.query_one("#btn-scale").visible = hasattr(self.source_panel, "scaling_mode")
         self.query_one("#btn-optimize").visible = hasattr(self.source_panel, "optimize") or hasattr(self.source_panel, "action_optimize")
         
+        # Size the Aether canvas if applicable
+        self._update_aether_size()
+        
         self.refresh_view()
-        # Start with standard 1.0s interval
-        self.refresh_timer = self.set_interval(1.0, self.refresh_view)
+        
+        # Use panel's sampling rate (e.g., 0.05s for Aether's 20 FPS)
+        interval = getattr(self.source_panel, "sampling_rate", 1.0)
+        self.refresh_timer = self.set_interval(interval, self.refresh_view)
         
         # Auto-Focus Control Logic
-        # Try to focus the main interactive table if present
         try:
             self.query_one("DataTable").focus()
         except:
             pass
+    
+    def _update_aether_size(self):
+        """Update Aether engine size based on container dimensions."""
+        if hasattr(self.source_panel, "set_aether_size"):
+            try:
+                container = self.query_one("#hero-console")
+                # Get actual terminal-based size (subtract for borders/padding)
+                width = container.size.width - 4 if container.size.width > 10 else 80
+                height = container.size.height - 8 if container.size.height > 12 else 20
+                self.source_panel.set_aether_size(max(40, width), max(10, height))
+            except:
+                self.source_panel.set_aether_size(80, 20)
+    
+    def on_resize(self, event):
+        """Handle terminal resize."""
+        self._update_aether_size()
 
     async def on_key(self, event):
         """Forward keys to source panel bindings."""
