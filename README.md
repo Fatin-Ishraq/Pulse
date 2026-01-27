@@ -62,5 +62,21 @@ Pulse comes with 6 curated high-contrast themes to match your terminal's vibe:
 
 ---
 
+## 🚀 Release Process
+
+This project uses automated PyPI publishing via GitHub Actions:
+
+1. **Generate PyPI Token**: Create an API token on PyPI (Account Settings → API Tokens)
+2. **Add to GitHub**: Add the token as `PYPI_API_TOKEN` to your repository secrets
+3. **Release**: Tag and push to trigger publishing:
+   ```bash
+   git tag v0.3.3
+   git push origin v0.3.3
+   ```
+
+The workflow automatically builds and publishes when a tag starting with `v` is pushed.
+
+---
+
 ## 📜 License
 MIT © [Fatin Ishraq](https://github.com/Fatin-Ishraq)
