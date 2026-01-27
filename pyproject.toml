@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pulse-monitor"
-version = "0.3.2"
+version = "0.3.3"
 description = "A cinematic terminal-based system monitor with Direct OS optimization"
 readme = "README.md"
 requires-python = ">=3.10"
