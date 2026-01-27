@@ -15,14 +15,15 @@ def test_get_memory_info():
         assert "swap_total" in mem_info
     else:
         # Linux/Mac logic (simplified for test)
-        with patch("pulse.direct_os.open" if sys.platform.startswith("linux") else "psutil.virtual_memory") as mock_src:
-            # For this test, we just want to ensure the function runs and returns a dict
-            # Deep mocking of /proc or psutil for every platform is complex for this scope.
-            # Let's rely on the structure check like Windows for now.
+        # We need to mock psutil.virtual_memory to return an object with total/percent attributes
+        # Creating a simple namedtuple or similar object to return
+        from collections import namedtuple
+        mem_nt = namedtuple('vmem', ['total', 'available', 'percent', 'used', 'free'])
+        mock_mem = mem_nt(total=1000, available=500, percent=50.0, used=500, free=500)
+        
+        with patch("psutil.virtual_memory", return_value=mock_mem):
              mem_info = core.get_memory_info()
              assert isinstance(mem_info, dict)
-             # The keys might differ slightly based on the platform implementation details in direct_os
-             # but 'total' and 'percent' are standard.
              if "total" in mem_info:
                  assert mem_info["total"] >= 0
 
