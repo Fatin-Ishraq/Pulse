@@ -23,7 +23,11 @@ PANEL_IDS = [
 
 
 async def boot(pilot, app, wait_for_sample=True):
-    """Settle the app, dismiss the boot screen, and wait for the first tick."""
+    """Settle the app, dismiss the boot screen, and wait for the first tick.
+
+    Freezing afterwards stops the periodic timer, so a test that drives ticks
+    itself is not racing an interval firing in the background.
+    """
     await pilot.pause()
     await asyncio.sleep(0.3)
     await pilot.pause()
@@ -37,6 +41,32 @@ async def boot(pilot, app, wait_for_sample=True):
                 break
             await asyncio.sleep(0.05)
             await pilot.pause()
+
+    await quiesce(pilot, app)
+
+
+async def quiesce(pilot, app):
+    """Stop periodic sampling and let any in-flight tick finish."""
+    app.frozen = True
+    await app.workers.wait_for_complete()
+    await pilot.pause()
+
+
+async def tick(pilot, app):
+    """Take exactly one sample and wait for it to be applied.
+
+    Goes through the worker rather than the interval timer, so the test
+    controls precisely how many snapshots exist and what is between them.
+    """
+    before = app.store.tick_count
+    worker = app._sample_metrics()
+    await worker.wait()
+    for _ in range(40):
+        if app.store.tick_count > before:
+            break
+        await asyncio.sleep(0.02)
+        await pilot.pause()
+    await pilot.pause()
 
 
 class TestSamplingPipeline:
@@ -112,10 +142,15 @@ class TestSamplingPipeline:
         async with app.run_test(size=(140, 45)) as pilot:
             await boot(pilot, app)
 
+            # boot() leaves the app frozen; start from the running state.
+            app.frozen = False
+            await pilot.pause()
+
             await pilot.press("f")
             await pilot.pause()
-            before = source.call_counts["cpu"]
+            assert app.frozen is True
 
+            before = source.call_counts["cpu"]
             app.refresh_data()
             await pilot.pause()
             await asyncio.sleep(0.2)
@@ -204,14 +239,11 @@ class TestDerivedValuesReachTheUI:
         async with app.run_test(size=(140, 45)) as pilot:
             await boot(pilot, app)
 
-            # Advance the fake machine so counters actually move.
+            # Advance the fake machine so its counters actually move, then take
+            # one controlled sample. tick() bypasses the periodic timer, so the
+            # two snapshots being compared are the two this test produced.
             source.advance(10)
-            app.refresh_data()
-            for _ in range(40):
-                if app.store.tick_count >= 2:
-                    break
-                await asyncio.sleep(0.05)
-                await pilot.pause()
+            await tick(pilot, app)
 
             assert app.store.tick_count >= 2
             assert app.store.rates.interval > 0
@@ -225,9 +257,20 @@ class TestDerivedValuesReachTheUI:
 
             for _ in range(3):
                 source.advance()
-                app.refresh_data()
-                await asyncio.sleep(0.15)
-                await pilot.pause()
+                await tick(pilot, app)
 
-            assert len(app.store.history.cpu) >= 2
+            assert len(app.store.history.cpu) >= 4
             assert app.store.peaks.cpu > 0
+
+    async def test_rates_stay_zero_when_the_machine_is_idle(self):
+        """No counter movement between ticks must read as zero, not as noise."""
+        source = MockSource()
+        app = PulseApp(source=source)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await boot(pilot, app)
+
+            # Sample twice without advancing: the counters are identical.
+            await tick(pilot, app)
+
+            assert app.store.rates.net_recv_kbps == 0.0
+            assert app.store.rates.disk_read_mbps == 0.0
