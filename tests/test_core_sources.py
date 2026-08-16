@@ -21,6 +21,7 @@ from pulse.core.models import (
 )
 from pulse.core.sampler import Sampler
 from pulse.core.sources import MetricSource, MockSource, SystemSource
+from pulse.core.sources import system as system_module
 
 
 @pytest.fixture(scope="module")
@@ -101,6 +102,61 @@ class TestSystemSourceShape:
 
     def test_containers_empty_without_a_controller(self, system_source):
         assert system_source.containers() == ()
+
+
+class TestProcessSelection:
+    """The snapshot must keep the heaviest processes, not the lowest PIDs.
+
+    Regression test: the source used to pass an unsorted limit straight to
+    direct_os, so on a host with more processes than the cap it returned an
+    arbitrary prefix in PID order. Every high PID was dropped - including the
+    busiest processes, and Pulse itself. It only showed up on macOS CI, where
+    the runner has enough processes to cross the cap.
+    """
+
+    def _raw(self, count):
+        # Ascending PID, and deliberately heaviest at the highest PIDs, so a
+        # prefix-based selection keeps exactly the wrong ones.
+        return [
+            {"pid": 1000 + i, "name": f"p{i}",
+             "cpu_percent": float(i), "memory_info": i * 1024}
+            for i in range(count)
+        ]
+
+    def test_keeps_the_busiest_processes(self):
+        raw = self._raw(system_module.PROCESSES_PER_AXIS * 3)
+        selected = {entry["pid"] for entry in SystemSource._select(raw)}
+        busiest = max(raw, key=lambda e: e["cpu_percent"])
+        assert busiest["pid"] in selected
+
+    def test_keeps_the_largest_processes(self):
+        raw = self._raw(system_module.PROCESSES_PER_AXIS * 3)
+        selected = {entry["pid"] for entry in SystemSource._select(raw)}
+        largest = max(raw, key=lambda e: e["memory_info"])
+        assert largest["pid"] in selected
+
+    def test_does_not_select_by_pid_order(self):
+        raw = self._raw(system_module.PROCESSES_PER_AXIS * 3)
+        selected = [entry["pid"] for entry in SystemSource._select(raw)]
+        assert selected != [entry["pid"] for entry in raw[:len(selected)]]
+
+    def test_selection_is_bounded(self):
+        raw = self._raw(5000)
+        selected = SystemSource._select(raw)
+        assert len(selected) <= system_module.PROCESSES_PER_AXIS * 2
+
+    def test_small_machines_keep_everything(self):
+        raw = self._raw(10)
+        selected = SystemSource._select(raw)
+        assert len(selected) == 10
+
+    def test_no_duplicates_when_a_process_is_heavy_on_both_axes(self):
+        raw = self._raw(20)
+        pids = [entry["pid"] for entry in SystemSource._select(raw)]
+        assert len(pids) == len(set(pids))
+
+    def test_handles_an_empty_machine(self):
+        assert SystemSource._select([]) == []
 
 
 class TestSystemSourceContainers:

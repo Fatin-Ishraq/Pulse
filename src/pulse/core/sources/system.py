@@ -30,8 +30,15 @@ from pulse.core.models import (
 # Reading every socket is expensive and needs privileges on some platforms, so
 # the connection table is capped rather than walked in full.
 MAX_CONNECTIONS = 500
-# Enough processes to fill any table view with room to sort.
-MAX_PROCESSES = 300
+
+# How many processes to keep per sort axis. The snapshot holds the union of the
+# heaviest by CPU and the heaviest by memory, so whichever way a view sorts,
+# the processes it wants are present.
+#
+# This must not be a plain prefix of the raw list: that truncates in PID order,
+# which on a machine with more processes than the cap silently drops every high
+# PID - including, on a busy host, the heaviest processes and Pulse itself.
+PROCESSES_PER_AXIS = 150
 
 
 class SystemSource:
@@ -193,10 +200,13 @@ class SystemSource:
     # Processes
     # ------------------------------------------------------------------
     def processes(self) -> Tuple[ProcessSample, ...]:
-        raw = direct_os.get_process_list(limit=MAX_PROCESSES)
+        # Fetch everything first - the pid/name/cpu/memory fields are cheap.
+        # The per-process psutil lookups below are not, so they only run for
+        # the processes a view could actually display.
+        raw = direct_os.get_process_list()
 
         samples = []
-        for entry in raw:
+        for entry in self._select(raw):
             pid = entry["pid"]
             username, status, threads = self._process_details(pid)
             samples.append(ProcessSample(
@@ -209,6 +219,23 @@ class SystemSource:
                 num_threads=threads,
             ))
         return tuple(samples)
+
+    @staticmethod
+    def _select(raw):
+        """The processes worth keeping: heaviest by CPU, plus heaviest by memory.
+
+        Selecting by weight rather than taking a prefix is what keeps the busy
+        processes in the snapshot on a host with more processes than the cap.
+        """
+        by_cpu = sorted(raw, key=lambda e: e.get("cpu_percent", 0.0),
+                        reverse=True)[:PROCESSES_PER_AXIS]
+        by_memory = sorted(raw, key=lambda e: e.get("memory_info", 0),
+                           reverse=True)[:PROCESSES_PER_AXIS]
+
+        selected = {}
+        for entry in (*by_cpu, *by_memory):
+            selected[entry["pid"]] = entry
+        return list(selected.values())
 
     @staticmethod
     def _process_details(pid: int):
