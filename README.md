@@ -112,8 +112,8 @@ Publishing to PyPI uses GitHub Actions with **Trusted Publishing** — no API to
 3. Confirm CI is green on `main` — the Linux job is the one that matters.
 4. Tag and push:
    ```bash
-   git tag v0.4.0
-   git push origin v0.4.0
+   git tag v0.5.0
+   git push origin v0.5.0
    ```
 
 The tag must match the version in `__init__.py`. PyPI will not accept a version

@@ -5,7 +5,10 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.5.0] - 2026-08-17
+
+Internal restructuring. No redesign - same layout, panels, themes and keys -
+but the numbers now agree with each other and the interface stops hitching.
 
 ### Changed
 
@@ -35,8 +38,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   possible.
 - Architectural tests that parse imports and fail if a panel reaches for psutil
   or subprocess, or if `pulse.core` imports a UI library.
-- Test count 94 -> 199; total coverage 39% -> 73%; CI floor raised to 65% with
+- Test count 94 -> 207; total coverage 39% -> 73%; CI floor raised to 65% with
   a dedicated 90% gate on `pulse.core`.
+
+### Fixed
+
+- **The process list could omit the heaviest processes.** The metrics source
+  capped the list without sorting it first, so on a machine with more processes
+  than the cap it kept an arbitrary prefix in PID order - dropping every high
+  PID, including the busy processes the panel exists to show. The snapshot now
+  keeps the union of the heaviest by CPU and by memory.
 
 ## [0.4.0] - 2026-08-17
 
@@ -130,4 +141,5 @@ Upgrade to 0.4.0.
 
 Initial published release line.
 
+[0.5.0]: https://github.com/Fatin-Ishraq/Pulse/releases/tag/v0.5.0
 [0.4.0]: https://github.com/Fatin-Ishraq/Pulse/releases/tag/v0.4.0
