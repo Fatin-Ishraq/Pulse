@@ -5,7 +5,7 @@ from pulse.panels.base import Panel
 from pulse.ui_utils import value_to_heat_color, make_bar
 
 from textual.widgets import DataTable, Static, Button
-from textual.containers import Container, Horizontal, Vertical
+from textual.containers import Container, Horizontal
 from textual.binding import Binding
 
 from pulse import core
@@ -65,35 +65,39 @@ class ProcessPanel(Panel):
         self.refresh_content(force=True)
 
     def action_kill_process(self):
-        """Kill selected process."""
+        """Terminate the process under the cursor, after confirmation."""
+        pid = self._selected_pid()
+        if pid is None:
+            return
+        self.request_kill(pid)
+
+    def action_renice_up(self):
+        """Increase nice value (lower priority)."""
+        self.request_renice(self._selected_pid(), 1)
+
+    def action_renice_down(self):
+        """Decrease nice value (higher priority)."""
+        self.request_renice(self._selected_pid(), -1)
+
+    def _selected_pid(self):
+        """PID under the table cursor, or None with a message explaining why not."""
         try:
             table = self.app.screen.query_one("#proc_table", DataTable)
-        except:
-            self.notify("Switch to Transcendence Mode [X] to manage processes", severity="warning")
-            return
+        except Exception:
+            self.notify("Press X for the full process view to manage processes.",
+                        severity="warning")
+            return None
 
         if table.cursor_row is None:
-            self.notify("No process selected", severity="error")
-            return
+            self.notify("No process selected.", severity="warning")
+            return None
 
         try:
             row_key = table.coordinate_to_cell_key(table.cursor_coordinate).row_key
-            pid = int(row_key.value)
-            
-            self.notify(f"Attempting to kill PID {pid}...", severity="information")
-            res = core.kill_process(pid)
-            
-            severity = "information" if "erminated" in res or "illed" in res else "error"
-            self.notify(res, severity=severity)
-            
-            # Refresh immediately
-            self.update_data()
-            self.refresh_content()
-            
-        except Exception as e:
-            self.notify(f"Kill action error: {e}", severity="error")
-
-    # ... (keep renice methods)
+            return int(row_key.value)
+        except (ValueError, TypeError, AttributeError):
+            self.notify("Could not identify the selected process.", severity="error")
+            return None
 
     def update_transcendence(self, screen):
         """Update the DataTable efficiently with rich visualization matching NetworkPanel."""

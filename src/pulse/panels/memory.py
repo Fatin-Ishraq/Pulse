@@ -23,48 +23,35 @@ class MemoryPanel(Panel):
     
     PANEL_NAME = "MEMORY"
     BINDINGS = [
-        ("f", "optimize", "Flush/Optimize"),
-        ("k", "kill_process", "Kill Process"),
+        ("k", "kill_process", "Kill Top Process"),
         ("plus", "renice_up", "Lower Priority"),
         ("minus", "renice_down", "Higher Priority"),
     ]
     
     def __init__(self):
         super().__init__("MEMORY", "", id="memory-panel")
-        self.history = deque(maxlen=80) 
-        self.optimizing = False
-        
+        self.history = deque(maxlen=80)
+
         # Transcendence Control States
         self.sampling_rate = 1.0
         self.view_mode = "developer" # cinematic / developer
-        self.selected_pid = None
-        
+        # The heaviest process currently on display. Actions name it explicitly
+        # and confirm before touching it - see Panel.request_kill.
+        self.top_pid = None
+
         core.init()
 
     def action_kill_process(self):
-        """Kill selected process via keyboard."""
-        if self.selected_pid:
-            core.kill_process(self.selected_pid)
-            self.notify(f"Terminated PID {self.selected_pid}")
-            self.selected_pid = None
+        """Terminate the displayed top process, after confirmation."""
+        self.request_kill(self.top_pid)
 
     def action_renice_up(self):
         """Increase nice value (lower priority)."""
-        self._adjust_nice(1)
+        self.request_renice(self.top_pid, 1)
 
     def action_renice_down(self):
         """Decrease nice value (higher priority)."""
-        self._adjust_nice(-1)
-
-    def _adjust_nice(self, delta):
-        if not self.selected_pid: return
-        try:
-            p = psutil.Process(self.selected_pid)
-            new_nice = max(-20, min(19, p.nice() + delta))
-            core.renice_process(self.selected_pid, new_nice)
-            self.notify(f"PID {self.selected_pid} Nice: {new_nice}")
-        except:
-            self.notify("Failed to renice", severity="error")
+        self.request_renice(self.top_pid, -1)
 
     def compose_transcendence(self):
         """Compose the interactive Memory Management Console."""
@@ -91,25 +78,12 @@ class MemoryPanel(Panel):
 
     def on_button_pressed(self, event: Button.Pressed):
         """Handle process control buttons."""
-        if not self.selected_pid:
-            return
-            
         if event.button.id == "btn-kill":
-            res = core.kill_process(self.selected_pid)
-            self.notify(res)
-            self.selected_pid = None
-        elif event.button.id.startswith("btn-renice"):
-            try:
-                p = psutil.Process(self.selected_pid)
-                nice = p.nice()
-                if "up" in event.button.id: 
-                    new_nice = min(19, nice + 1)
-                else: 
-                    new_nice = max(-20, nice - 1)
-                core.renice_process(self.selected_pid, new_nice)
-                self.notify(f"Reniced PID {self.selected_pid} to {new_nice}")
-            except:
-                self.notify("Failed to renice", severity="error")
+            self.request_kill(self.top_pid)
+        elif event.button.id == "btn-renice-up":
+            self.request_renice(self.top_pid, 1)
+        elif event.button.id == "btn-renice-down":
+            self.request_renice(self.top_pid, -1)
 
     def update_transcendence(self, screen):
         """Update the interactive transcendence view."""
@@ -160,33 +134,25 @@ class MemoryPanel(Panel):
             procs = core.get_process_list(sort_by='mem', limit=1)
             if procs:
                 top = procs[0]
-                self.selected_pid = top['pid']
+                # Tracked for display; the action itself names this process in a
+                # confirmation before doing anything to it.
+                self.top_pid = top['pid']
                 mem_mb = top['memory_info'] / (1024 * 1024)
-                
+
                 info = Text()
                 info.append(f"PID: {top['pid']}\n", style="bold yellow")
                 info.append(f"NAME: {top['name']}\n", style="bold white")
                 info.append(f"MEM: {mem_mb:.1f} MB\n", style="cyan")
-                
+                info.append("Actions below apply to this process.", style="dim")
+
                 screen.query_one("#mem-top-process-info", Static).update(info)
             else:
+                self.top_pid = None
                 screen.query_one("#mem-top-process-info", Static).update("No active processes identified.")
-        except:
+        except Exception:
             pass
 
-    def action_optimize(self):
-        """Simulate memory optimization/cache flush."""
-        self.optimizing = True
-        self.notify("Initiating Memory Pulse Optimization...", severity="information")
-        
-        def reset_opt():
-            self.optimizing = False
-            self.refresh()
-            
-        import threading
-        threading.Timer(1.5, reset_opt).start()
-        self.refresh()
-    
+
     def update_data(self):
         try:
             # Get memory info from Direct OS engine
@@ -224,11 +190,6 @@ class MemoryPanel(Panel):
 
     def get_transcendence_view(self) -> Text:
         """Immersive Memory console with pressure waves and allocation mapping."""
-        if self.optimizing:
-            msg = Text("\n\n  ⚡ INITIATING MEMORY PURGE...\n", style="bold cyan")
-            msg.append("  " + "█" * 20, style="cyan")
-            return msg
-            
         text = Text()
         try:
             mem = psutil.virtual_memory()
@@ -294,14 +255,12 @@ class MemoryPanel(Panel):
                 
             text.append("\nSWAP & PAGING\n", style="cyan")
             text.append(f"  Swap Used:    {swap.used/(1024**3):6.2f} GB / {swap.total/(1024**3):.2f} GB\n", style="dim")
-            
-            try:
-                # Some platforms provide paging stats
-                vm = psutil.swap_memory()
-                text.append(f"  Total Faults: {getattr(psutil, 'wait_procs', lambda:[])[0] if hasattr(psutil, 'cpu_stats') else 'N/A'}\n", style="dim dim")
-                # text.append(f"  Swap In/Out:  {vm.sin/(1024**2):.1f}MB / {vm.sout/(1024**2):.1f}MB\n", style="dim") # Often 0 on Windows
-            except:
-                pass
+            # sin/sout are cumulative pages swapped in/out. Windows reports 0.
+            if swap.sin or swap.sout:
+                text.append(
+                    f"  Swap In/Out:  {swap.sin/(1024**2):.1f} MB / {swap.sout/(1024**2):.1f} MB\n",
+                    style="dim",
+                )
 
         return text
 

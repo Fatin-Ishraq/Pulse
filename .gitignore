@@ -25,3 +25,9 @@ wheels/
 .idea/
 *.swp
 *.swo
+
+# Testing
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/

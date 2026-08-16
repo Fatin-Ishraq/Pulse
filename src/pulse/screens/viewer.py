@@ -1,12 +1,13 @@
+import stat as stat_module
 from pathlib import Path
+
 from rich.syntax import Syntax
 from rich.text import Text
 
 from textual.app import ComposeResult
-from textual.binding import Binding
-from textual.containers import Container, Vertical, VerticalScroll
+from textual.containers import Container, VerticalScroll
 from textual.screen import ModalScreen
-from textual.widgets import Header, Footer, Static
+from textual.widgets import Footer, Static
 
 class FileViewer(ModalScreen):
     """A modal screen for viewing file content natively."""
@@ -45,10 +46,17 @@ class FileViewer(ModalScreen):
     }
     """
     
+    # Reading more than this into the terminal is neither useful nor fast.
+    MAX_VIEW_SIZE = 5 * 1024 * 1024
+    # Enough to tell text from binary and to fill several screens.
+    SNIFF_SIZE = 64 * 1024
+    HEX_PREVIEW_SIZE = 4096
+
     def __init__(self, path: str):
         super().__init__()
         self.path = Path(path)
-        
+
+
     def compose(self) -> ComposeResult:
         with Container(id="viewer-container"):
             yield Static(f"📄 {self.path.name}", id="viewer-header")
@@ -60,43 +68,78 @@ class FileViewer(ModalScreen):
         """Load content async."""
         self.load_file()
         
+    def _reject(self, message: str) -> str:
+        """Return a reason this path must not be opened, or an empty string."""
+        try:
+            info = self.path.lstat()
+        except OSError as exc:
+            return f"Cannot stat file: {exc}"
+
+        mode = info.st_mode
+        if stat_module.S_ISLNK(mode):
+            return "Symlink - open the target directly if you meant to view it."
+        if stat_module.S_ISFIFO(mode):
+            # Reading a FIFO with no writer blocks forever and takes the UI with it.
+            return "Named pipe (FIFO) - reading it would block indefinitely."
+        if stat_module.S_ISSOCK(mode):
+            return "Socket - not a readable file."
+        if stat_module.S_ISBLK(mode) or stat_module.S_ISCHR(mode):
+            return "Device file - reading it can block or return endless data."
+        if not stat_module.S_ISREG(mode):
+            return "Not a regular file."
+        if info.st_size > self.MAX_VIEW_SIZE:
+            size_mb = info.st_size / (1024 * 1024)
+            limit_mb = self.MAX_VIEW_SIZE / (1024 * 1024)
+            return f"File is {size_mb:.1f} MB, over the {limit_mb:.0f} MB view limit."
+        return ""
+
     def load_file(self):
         body = self.query_one("#file-body", Static)
+
+        # Only regular files are safe to read on the UI thread: a FIFO or a
+        # character device would block the event loop with no way out.
+        rejection = self._reject(str(self.path))
+        if rejection:
+            body.update(Text(rejection, style="red"))
+            return
+
         try:
-            stat = self.path.stat()
-            if stat.st_size > 5 * 1024 * 1024:
-                body.update(Text("File too large to view natively (Legacy Limit: 5MB)", style="red"))
-                return
-                
-            # Basic Binary Check
-            is_binary = False
-            try:
-                with open(self.path, "tr", encoding="utf-8") as f:
-                    content = f.read()
-            except UnicodeDecodeError:
-                is_binary = True
-                
-            if is_binary:
-                self.show_hex_dump(body)
-            else:
-                # Syntax Highlight
-                syntax = Syntax.from_path(
-                    str(self.path),
-                    theme="monokai",
-                    line_numbers=True,
-                    word_wrap=False
-                )
-                body.update(syntax)
-                
-        except Exception as e:
-            body.update(Text(f"Error reading file: {e}", style="red"))
-            
-    def show_hex_dump(self, widget):
-        """Render a cool hex dump."""
-        try:
+            # One bounded read decides text vs binary and feeds the hex dump,
+            # instead of reading the whole file twice.
             with open(self.path, "rb") as f:
-                data = f.read(4096) # Read first 4KB for preview
-                
+                head = f.read(self.SNIFF_SIZE)
+        except OSError as exc:
+            body.update(Text(f"Error reading file: {exc}", style="red"))
+            return
+
+        # A NUL byte in the first block is the usual signal for binary content.
+        is_binary = b"\x00" in head
+        if not is_binary:
+            try:
+                head.decode("utf-8")
+            except UnicodeDecodeError:
+                # A multi-byte character can straddle the read boundary, so only
+                # treat it as binary if the failure is not right at the end.
+                is_binary = len(head) < self.SNIFF_SIZE
+
+        if is_binary:
+            self.show_hex_dump(body, head[:self.HEX_PREVIEW_SIZE])
+            return
+
+        try:
+            syntax = Syntax.from_path(
+                str(self.path),
+                theme="monokai",
+                line_numbers=True,
+                word_wrap=False,
+            )
+            body.update(syntax)
+        except (OSError, UnicodeDecodeError) as exc:
+            body.update(Text(f"Error reading file: {exc}", style="red"))
+            
+    def show_hex_dump(self, widget, data: bytes):
+        """Render a hex preview of already-read bytes."""
+        try:
             text = Text()
             text.append(f"BINARY FILE DETECTED - HEX PREVIEW ({len(data)} bytes)\n\n", style="bold yellow")
             
@@ -125,10 +168,10 @@ class FileViewer(ModalScreen):
                         text.append(".", style="dim")
                 text.append("|\n")
                 
-            if self.path.stat().st_size > 4096:
+            if self.path.stat().st_size > len(data):
                 text.append("\n... (Truncated for preview) ...", style="dim")
-                
+
             widget.update(text)
-            
-        except Exception as e:
-            widget.update(f"Hex dump failed: {e}")
+
+        except OSError as exc:
+            widget.update(Text(f"Hex dump failed: {exc}", style="red"))

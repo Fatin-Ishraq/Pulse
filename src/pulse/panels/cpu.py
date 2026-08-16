@@ -7,16 +7,15 @@ from pulse.panels.base import Panel
 from pulse.ui_utils import value_to_spark, value_to_heat_color, make_bar
 
 from textual.containers import Container, Vertical, Horizontal
-from textual.widgets import Static, Button, Label
-from textual.message import Message
+from textual.widgets import Static, Button
 
 class CPUPanel(Panel):
     """Shows CPU core heat blocks with real data."""
-    
+
     PANEL_NAME = "CPU"
-    
+
     BINDINGS = [
-        ("k", "kill_process", "Kill Process"),
+        ("k", "kill_process", "Kill Top Process"),
         ("plus", "renice_up", "Lower Priority"),
         ("minus", "renice_down", "Higher Priority"),
     ]
@@ -26,41 +25,30 @@ class CPUPanel(Panel):
         self.core_count = psutil.cpu_count()
         # Track history for every core
         self.per_core_history = [deque(maxlen=30) for _ in range(self.core_count)]
-        self.aggregate_history = deque(maxlen=80) 
-        
+        self.aggregate_history = deque(maxlen=80)
+
         # Transcendence Control States
         self.sampling_rate = 1.0
         self.view_mode = "developer" # cinematic / developer
         self.scaling_mode = "absolute" # absolute / relative
-        self.selected_pid = None # For process control
-        
+        # The heaviest process currently on display. Actions name it explicitly
+        # and confirm before touching it - see Panel.request_kill.
+        self.top_pid = None
+
         # Initialize Core
         core.init()
-    
+
     def action_kill_process(self):
-        """Kill selected process via keyboard."""
-        if self.selected_pid:
-            core.kill_process(self.selected_pid)
-            self.notify(f"Terminated PID {self.selected_pid}")
-            self.selected_pid = None
+        """Terminate the displayed top process, after confirmation."""
+        self.request_kill(self.top_pid)
 
     def action_renice_up(self):
         """Increase nice value (lower priority)."""
-        self._adjust_nice(1)
+        self.request_renice(self.top_pid, 1)
 
     def action_renice_down(self):
         """Decrease nice value (higher priority)."""
-        self._adjust_nice(-1)
-
-    def _adjust_nice(self, delta):
-        if not self.selected_pid: return
-        try:
-            p = psutil.Process(self.selected_pid)
-            new_nice = max(-20, min(19, p.nice() + delta))
-            core.renice_process(self.selected_pid, new_nice)
-            self.notify(f"PID {self.selected_pid} Nice: {new_nice}")
-        except:
-            self.notify("Failed to renice", severity="error")
+        self.request_renice(self.top_pid, -1)
 
     def compose_transcendence(self):
         """Compose the interactive Core Management Console."""
@@ -87,26 +75,12 @@ class CPUPanel(Panel):
     
     def on_button_pressed(self, event: Button.Pressed):
         """Handle process control buttons."""
-        if not self.selected_pid:
-            return
-            
         if event.button.id == "btn-kill":
-            res = core.kill_process(self.selected_pid)
-            self.notify(res)
-            self.selected_pid = None
-        elif event.button.id.startswith("btn-renice"):
-            try:
-                p = psutil.Process(self.selected_pid)
-                nice = p.nice()
-                if "up" in event.button.id: # Increase nice value (lower priority)
-                    new_nice = min(19, nice + 1)
-                else: # Decrease nice value (higher priority)
-                    new_nice = max(-20, nice - 1)
-                
-                core.renice_process(self.selected_pid, new_nice)
-                self.notify(f"Reniced PID {self.selected_pid} to {new_nice}")
-            except:
-                self.notify("Failed to renice process", severity="error")
+            self.request_kill(self.top_pid)
+        elif event.button.id == "btn-renice-up":
+            self.request_renice(self.top_pid, 1)
+        elif event.button.id == "btn-renice-down":
+            self.request_renice(self.top_pid, -1)
 
     def update_transcendence(self, screen):
         """Update the interactive transcendence view."""
@@ -164,18 +138,21 @@ class CPUPanel(Panel):
             procs = core.get_process_list(sort_by='cpu', limit=1)
             if procs:
                 top = procs[0]
-                self.selected_pid = top['pid']
-                
+                # Tracked for display; the action itself names this process in a
+                # confirmation before doing anything to it.
+                self.top_pid = top['pid']
+
                 info = Text()
                 info.append(f"PID: {top['pid']}\n", style="bold yellow")
                 info.append(f"NAME: {top['name']}\n", style="bold white")
-                info.append(f"CPU: {top['cpu_percent']}%\n", style="red")
-                # info.append(f"MEM: {top['memory_info'] / 1024 / 1024:.1f} MB", style="cyan")
-                
+                info.append(f"CPU: {top['cpu_percent']:.1f}%\n", style="red")
+                info.append("Actions below apply to this process.", style="dim")
+
                 screen.query_one("#top-process-info", Static).update(info)
             else:
+                self.top_pid = None
                 screen.query_one("#top-process-info", Static).update("No active processes identified.")
-        except:
+        except Exception:
             pass
     
     def update_data(self):

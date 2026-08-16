@@ -1,7 +1,7 @@
 from random import choice, randint
 from textual.screen import Screen
 from textual.widgets import Static
-from textual.containers import Container, Vertical
+from textual.containers import Container
 
 LOGO = r"""
 ██████╗ ██╗   ██╗██╗     ███████╗███████╗

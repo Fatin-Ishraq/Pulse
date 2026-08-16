@@ -36,12 +36,19 @@ class HelpScreen(ModalScreen):
 | :-: | :--- |
 | **T** | Cycle Theme (Nord/Dracula/Monokai/Dark/Solarized/Gruvbox) |
 | **F** | Freeze / Unfreeze Updates |
-| **C** | Sort Processes by CPU |
-| **M** | Sort Processes by Memory |
+| **X** | Enter / Exit full-screen panel view |
+| **Arrows** | Move focus around the grid |
 | **Tab** | Focus Next Panel + Detailed View |
 | **S-Tab** | Focus Previous Panel |
+| **C** | Sort Processes by CPU |
+| **M** | Sort Processes by Memory |
+| **K** | Terminate selected process (asks first) |
+| **+ / -** | Lower / raise process priority |
 | **? / H** | Toggle Help Screen |
 | **Q** | Quit Application |
+
+Destructive actions always confirm and name their target. Pulse refuses to
+touch itself, your shell, or system-critical processes.
 
 *Press any key or click to dismiss*
         """

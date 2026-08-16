@@ -2,25 +2,25 @@
 
 > *"Not a dashboard. An instrument panel."*
 
-**Pulse** is a cinematic, terminal-based system monitor built for enthusiasts who crave high-density telemetry with a premium aesthetic. Every panel animates; nothing is static. 
-
-Built with the **Direct OS Engine**, Pulse communicates directly with your kernel for high-performance metrics with near-zero overhead.
+**Pulse** is a terminal system monitor for people who want high-density telemetry with a bit of style. Built on [Textual](https://textual.textualize.io/) and [psutil](https://github.com/giampaolo/psutil).
 
 ---
 
 ## ✨ Features
 
-- **Direct OS Engine**: High-performance architecture using native OS APIs. No Rust, no complex build tools—just pure, optimized Python.
-- **Transcendence mode**: Hit `X` on any focused subsystem to enter an immersive, high-detail view.
-- **Neural Insight Engine**: Real-time heuristic analysis of system bottlenecks and resource leaks.
-- **Cinematic UI**: Smooth animations, glassmorphism-inspired transparency, and curated color palettes.
-- **High-Precision Pulse**: Configurable sampling rates down to 0.2s for micro-stutter detection.
+- **Live telemetry** for CPU, memory, disk I/O, storage, network, and processes.
+- **Transcendence mode** — press `X` on any focused panel for a full-screen, interactive view.
+- **Process and container control** — terminate, renice, and manage Docker containers. Every destructive action confirms first and names its exact target.
+- **Six themes** — Nord, Dracula, Monokai, Dark, Solarized, Gruvbox. Your choice is remembered.
+- **Configurable refresh rate**, from 0.1s for micro-stutter hunting to 60s for a background glance.
+
+### How metrics are collected
+
+On Linux, Pulse reads `/proc` directly and computes its own CPU and per-process deltas. On Windows it uses `GlobalMemoryStatusEx` for memory and psutil elsewhere; on macOS and other platforms it uses psutil throughout. psutil is a dependency on every platform.
 
 ---
 
 ## 🚀 Installation
-
-Install directly from PyPI:
 
 ```bash
 pip install pulse-monitor
@@ -32,110 +32,92 @@ Then launch from anywhere:
 pulse
 ```
 
----
-
-## 🎮 Navigation & Tactical Controls
-
-| Key | Tactical Action |
-| --- | --- |
-| `Q` | Kill Application Interlock |
-| `T` | Cycle UI Theme Palettes |
-| `Tab` | Shift Tactical Focus (Forward) |
-| `Shift+Tab`| Shift Tactical Focus (Backward) |
-| `Arrow Keys`| Spatial Navigation Grid |
-| `X` | Enter/Exit **Transcendence View** |
-| `F` | Toggle **Data Freeze** (Cryo-lock) |
-| `?` / `H` | Toggle Tactical Overlay (Help) |
-
-### 🌀 Transcendence Interaction
-When inside a full-screen panel:
-- `M` — Toggle **View Mode** (Cinematic vs. Developer)
-- `R` — Toggle **Sampling Rate** (Precision Pulse)
-- `S` — Cycle **Scaling Mode** (Absolute vs. Auto)
-- `Esc` — Return to Master View
-
----
-
-## 💎 Theming
-Pulse comes with 6 curated high-contrast themes to match your terminal's vibe:
-# ⚡ P U L S E
-
-> *"Not a dashboard. An instrument panel."*
-
-**Pulse** is a cinematic, terminal-based system monitor built for enthusiasts who crave high-density telemetry with a premium aesthetic. Every panel animates; nothing is static. 
-
-Built with the **Direct OS Engine**, Pulse communicates directly with your kernel for high-performance metrics with near-zero overhead.
-
----
-
-## ✨ Features
-
-- **Direct OS Engine**: High-performance architecture using native OS APIs. No Rust, no complex build tools—just pure, optimized Python.
-- **Transcendence mode**: Hit `X` on any focused subsystem to enter an immersive, high-detail view.
-- **Neural Insight Engine**: Real-time heuristic analysis of system bottlenecks and resource leaks.
-- **Cinematic UI**: Smooth animations, glassmorphism-inspired transparency, and curated color palettes.
-- **High-Precision Pulse**: Configurable sampling rates down to 0.2s for micro-stutter detection.
-
----
-
-## 🚀 Installation
-
-Install directly from PyPI:
+Docker container monitoring is optional, because access to the Docker socket is root-equivalent on the host:
 
 ```bash
-pip install pulse-monitor
-```
-
-Then launch from anywhere:
-
-```bash
-pulse
+pip install "pulse-monitor[docker]"
 ```
 
 ---
 
-## 🎮 Navigation & Tactical Controls
+## 🎮 Controls
 
-| Key | Tactical Action |
+| Key | Action |
 | --- | --- |
-| `Q` | Kill Application Interlock |
-| `T` | Cycle UI Theme Palettes |
-| `Tab` | Shift Tactical Focus (Forward) |
-| `Shift+Tab`| Shift Tactical Focus (Backward) |
-| `Arrow Keys`| Spatial Navigation Grid |
-| `X` | Enter/Exit **Transcendence View** |
-| `F` | Toggle **Data Freeze** (Cryo-lock) |
-| `?` / `H` | Toggle Tactical Overlay (Help) |
+| `Q` | Quit |
+| `T` | Cycle theme |
+| `Tab` / `Shift+Tab` | Focus next / previous panel |
+| `Arrow Keys` | Move focus around the grid |
+| `X` | Enter / exit **Transcendence** view |
+| `F` | Freeze updates |
+| `?` / `H` | Help overlay |
 
-### 🌀 Transcendence Interaction
-When inside a full-screen panel:
-- `M` — Toggle **View Mode** (Cinematic vs. Developer)
-- `R` — Toggle **Sampling Rate** (Precision Pulse)
-- `S` — Cycle **Scaling Mode** (Absolute vs. Auto)
-- `Esc` — Return to Master View
+### Inside Transcendence
+
+| Key | Action |
+| --- | --- |
+| `P` | Toggle sampling precision |
+| `S` | Cycle scaling mode |
+| `Esc` | Back to the grid |
+
+### Process and container actions
+
+| Key | Action |
+| --- | --- |
+| `K` | Terminate the selected process (asks first) |
+| `+` / `-` | Lower / raise priority |
+| `C` / `M` | Sort processes by CPU / memory |
+| `S` / `K` / `R` | Docker: start / stop / restart the selected container (asks first) |
+
+Pulse will not act on processes where a mistake takes down your session: itself, its parent shell, PID 1 or the session leader on POSIX, and the reserved Windows system PIDs. It never escalates privileges on its own — if a kill is denied, it says so and offers a force kill as a separate, explicit choice.
 
 ---
 
-## 💎 Theming
-Pulse comes with 6 curated high-contrast themes to match your terminal's vibe:
-`Nord` • `Dracula` • `Monokai` • `Dark` • `Solarized` • `Gruvbox`
+## ⚙️ Configuration
+
+Config lives at `%APPDATA%\pulse\config.toml` on Windows, `$XDG_CONFIG_HOME/pulse/config.toml` (usually `~/.config/pulse/`) elsewhere.
+
+```toml
+[ui]
+theme = "nord"        # nord | dracula | monokai | textual-dark | solarized-dark | gruvbox
+
+[core]
+refresh_rate = 1.0    # seconds, clamped to 0.1 - 60.0
+```
+
+Unknown or out-of-range values fall back to the defaults rather than breaking startup.
+
+---
+
+## 🛠️ Development
+
+```bash
+git clone https://github.com/Fatin-Ishraq/Pulse.git
+cd Pulse
+python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -e ".[test]"
+pytest
+```
+
+Run it from the source tree with `pulse` or `python -m pulse`.
 
 ---
 
 ## 🚀 Release Process
 
-This project uses automated PyPI publishing via GitHub Actions with **Trusted Publishing**:
+Publishing to PyPI uses GitHub Actions with **Trusted Publishing** — no API tokens in secrets.
 
-1. **Configure PyPI**: Add this repository as a "Pending Publisher" on PyPI.org.
-   - Project: `pulse-monitor`
-   - Workflow: `publish.yml`
-2. **Release**: Tag and push to trigger publishing:
+1. Bump `__version__` in `src/pulse/__init__.py` (the package version is read from there).
+2. Update `CHANGELOG.md`.
+3. Confirm CI is green on `main` — the Linux job is the one that matters.
+4. Tag and push:
    ```bash
-   git tag v0.3.3
-   git push origin v0.3.3
+   git tag v0.4.0
+   git push origin v0.4.0
    ```
 
-The workflow automatically builds and publishes when a tag starting with `v` is pushed. No API tokens are required in GitHub Secrets.
+The tag must match the version in `__init__.py`. PyPI will not accept a version
+number twice, so a mismatched tag burns that version permanently.
 
 ---
 

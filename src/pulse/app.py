@@ -13,6 +13,7 @@ Controls:
   Q     - Quit
 """
 
+import argparse
 from typing import Iterable
 
 from textual.app import App, SystemCommand
@@ -21,6 +22,8 @@ from textual.screen import Screen
 from textual.widgets import Header, Footer
 
 
+
+from pulse import __version__
 
 # Import Panels
 from pulse.panels.base import Panel
@@ -38,18 +41,17 @@ from pulse.panels.main_view import MainViewPanel
 from pulse.screens.boot import BootScreen
 from pulse.screens.help import HelpScreen
 from pulse.screens.immersive import ImmersiveScreen
-from pulse.config import load_config, save_config
+from pulse.config import (
+    DEFAULT_THEME,
+    VALID_THEMES,
+    load_config,
+    save_config,
+    validate_refresh_rate,
+)
 
 
-# Theme definitions
-THEMES = [
-    "nord",
-    "dracula", 
-    "monokai",
-    "textual-dark",
-    "solarized-dark",
-    "gruvbox",
-]
+# Theme definitions (validated against the same list in pulse.config)
+THEMES = list(VALID_THEMES)
 
 class PulseApp(App):
     """A cinematic terminal-based system monitor."""
@@ -257,12 +259,12 @@ class PulseApp(App):
     def __init__(self):
         super().__init__()
         self.frozen = False
-        
-        # Load Config
+
+        # Load Config (already validated - see pulse.config)
         self.config = load_config()
-        
+
         # Determine theme index from config
-        saved_theme = self.config.get("ui", {}).get("theme", "nord")
+        saved_theme = self.config.get("ui", {}).get("theme", DEFAULT_THEME)
         try:
             self.theme_index = THEMES.index(saved_theme)
         except ValueError:
@@ -298,7 +300,9 @@ class PulseApp(App):
         # Apply initial theme
         self.apply_theme()
         
-        refresh_rate = self.config.get("core", {}).get("refresh_rate", 1.0)
+        refresh_rate = validate_refresh_rate(
+            self.config.get("core", {}).get("refresh_rate")
+        )
         self.set_interval(refresh_rate, self.refresh_data)
         self.refresh_data()
     
@@ -356,15 +360,11 @@ class PulseApp(App):
         self.apply_theme()
         
         # Save preference
-        current_theme = THEMES[self.theme_index]
-        if "ui" not in self.config:
-            self.config["ui"] = {}
-        self.config["ui"]["theme"] = current_theme
-        save_config(self.config)
+        self.config.setdefault("ui", {})["theme"] = THEMES[self.theme_index]
+        if not save_config(self.config):
+            self.notify("Theme applied, but the preference could not be saved.",
+                        severity="warning")
 
-        # explicity set sub_title again to ensure update, though apply_theme does it
-        # The issue might be that apply_theme uses `self.sub_title = ...` which should work.
-        # Let's ensure refresh_data doesn't overwrite it or something.
         self.refresh_data()  # Refresh to show visual updates immediately
     
     def action_freeze(self):
@@ -377,9 +377,20 @@ class PulseApp(App):
             self.sub_title = f"Theme: {theme.upper()} (Press ? for Help)"
 
 
-def main():
-    app = PulseApp()
-    app.run()
+def main(argv=None):
+    """Console entry point."""
+    parser = argparse.ArgumentParser(
+        prog="pulse",
+        description="A cinematic terminal-based system monitor.",
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"pulse {__version__}",
+    )
+    parser.parse_args(argv)
+
+    PulseApp().run()
 
 
 if __name__ == "__main__":

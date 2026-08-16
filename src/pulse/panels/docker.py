@@ -1,8 +1,7 @@
 from rich.text import Text
-from rich.table import Table
 from textual.app import ComposeResult
 from textual.widgets import DataTable, Button, Label
-from textual.containers import Container, Horizontal, Vertical
+from textual.containers import Vertical
 
 from pulse.panels.base import Panel
 from pulse.container_api import ContainerController
@@ -23,16 +22,22 @@ class DockerPanel(Panel):
 
     def __init__(self, **kwargs):
         super().__init__("DOCKER", **kwargs)
+        # The controller does not touch the Docker socket until something asks
+        # it to - access to that socket is root-equivalent on the host.
         self.controller = ContainerController()
         self.containers = []
         self.summary_stats = {"total": 0, "running": 0, "paused": 0, "stopped": 0}
-        self.selected_container_id = None
         self.table_widget = None
 
     def update_data(self) -> None:
         """Fetch latest container data."""
+        if not self.controller.available:
+            self.update(self.controller.status_text())
+            self.border_title = "DOCKER [N/A]"
+            return
+
         if not self.controller.is_available():
-            self.update("Docker Daemon\nNOT FOUND")
+            self.update(self.controller.status_text())
             self.border_title = "DOCKER [OFFLINE]"
             return
 
@@ -65,8 +70,9 @@ class DockerPanel(Panel):
     def get_detailed_view(self) -> Text:
         """Textual detail view for the main panel (sidebar preview)."""
         if not self.controller.connected:
-            return Text("Docker not connected.", style="red")
-            
+            return Text(self.controller.status_text(), style="red")
+
+
         text = Text()
         text.append("CONTAINERS\n", style="bold underline")
         for c in self.containers[:10]: # Limit to 10 for preview
@@ -85,8 +91,11 @@ class DockerPanel(Panel):
     
     def compose_transcendence(self) -> ComposeResult:
         """Compose the interactive full-screen view."""
-        if not self.controller.connected:
-            yield Label("Docker Daemon is unreachable. Ensure Docker is running and try again.", id="docker-error")
+        # First point where the user has actually asked to manage containers,
+        # so this is where the connection attempt belongs.
+        if not self.controller.is_available():
+            yield Label(self.controller.last_error or "Docker daemon is unreachable.",
+                        id="docker-error")
             return
 
         with Vertical(id="docker-transcendence"):
@@ -124,36 +133,44 @@ class DockerPanel(Panel):
         if cursor_row < len(self.containers):
             self.table_widget.move_cursor(row=cursor_row)
 
-    def on_data_table_row_selected(self, event: DataTable.RowSelected):
-        """Track selection."""
-        self.selected_container_id = event.row_key.value
-
     def _get_selected_id(self):
         """Helper to get currently selected ID from table."""
-        if not self.table_widget: return None
+        if not self.table_widget:
+            return None
         try:
-            row_key = self.table_widget.coordinate_to_cell_key(self.table_widget.cursor_coordinate).row_key
+            row_key = self.table_widget.coordinate_to_cell_key(
+                self.table_widget.cursor_coordinate).row_key
             return row_key.value
-        except:
+        except (AttributeError, TypeError, ValueError):
             return None
 
-    def action_restart_container(self):
-        cid = self._get_selected_id()
-        if cid:
-            self.app.notify(f"Restarting {cid}...")
-            self.controller.restart_container(cid)
+    def _container_name(self, container_id: str) -> str:
+        for container in self.containers:
+            if container["id"] == container_id:
+                return f"{container['name']} ({container_id})"
+        return container_id
+
+    def _request(self, operation: str) -> None:
+        """Confirm, then run a container operation and report what happened."""
+        container_id = self._get_selected_id()
+
+        def run():
+            result = getattr(self.controller, f"{operation}_container")(container_id)
             self.update_data()
+            return result
+
+        self.request_container_action(
+            operation,
+            container_id,
+            self._container_name(container_id) if container_id else "",
+            run,
+        )
+
+    def action_restart_container(self):
+        self._request("restart")
 
     def action_stop_container(self):
-        cid = self._get_selected_id()
-        if cid:
-            self.app.notify(f"Stopping {cid}...")
-            self.controller.stop_container(cid)
-            self.update_data()
+        self._request("stop")
 
     def action_start_container(self):
-        cid = self._get_selected_id()
-        if cid:
-            self.app.notify(f"Starting {cid}...")
-            self.controller.start_container(cid)
-            self.update_data()
+        self._request("start")

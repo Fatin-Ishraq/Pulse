@@ -1,15 +1,12 @@
+import datetime
+import os
 import platform
+
 import psutil
 from rich.text import Text
 
-import os
-import subprocess
-import shutil
-
 from pulse.panels.base import Panel
 from pulse.ui_utils import value_to_heat_color, make_bar
-
-import datetime
 
 from textual.widgets import DataTable, Static, Button
 from textual.containers import Container, Horizontal
@@ -98,13 +95,6 @@ class StoragePanel(Panel):
     def action_explore(self):
         """Standardize on Native Open."""
         self.action_select_item()
-
-    def _open_os_path(self, path):
-        """Cross-platform launch. 
-        DEPRECATED: User requested native-only experience.
-        Kept for potential legacy fallback if needed.
-        """
-        pass
 
     def compose_transcendence(self):
         """Interactive Storage Matrix."""

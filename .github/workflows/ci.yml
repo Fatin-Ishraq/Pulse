@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [ "main" ]
 
+permissions:
+  contents: read
+
 jobs:
   test:
     name: Test on ${{ matrix.os }} with Python ${{ matrix.python-version }}
@@ -29,6 +32,47 @@ jobs:
         python -m pip install --upgrade pip
         pip install .[test]
 
-    - name: Run tests
+    - name: Run tests with coverage
+      run: pytest --cov=pulse --cov-report=term-missing --cov-fail-under=35
+
+    - name: Enforce coverage on safety-critical modules
+      # These decide whether a destructive action happens at all, so they are
+      # held to a much higher bar than the rendering code.
+      run: >-
+        pytest tests/test_actions.py tests/test_config.py
+        --cov=pulse.actions --cov=pulse.config
+        --cov-report=term-missing --cov-fail-under=85
+
+  smoke:
+    name: Installed package launches
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
+    - name: Build the wheel
       run: |
-        pytest
+        python -m pip install --upgrade pip build
+        python -m build --wheel
+
+    - name: Install the built wheel
+      shell: bash
+      run: pip install dist/*.whl
+
+    - name: Console script runs
+      run: |
+        pulse --version
+        pulse --help
+
+    - name: Package imports without the optional docker extra
+      # Docker is opt-in; importing must not require it.
+      run: python -c "import pulse, pulse.app, pulse.container_api; print(pulse.__version__)"

@@ -1,3 +1,4 @@
 """Pulse - A cinematic terminal-based system monitor."""
 
-__version__ = "0.1.0"
+# Single source of truth: pyproject.toml reads the version from here.
+__version__ = "0.4.0"
