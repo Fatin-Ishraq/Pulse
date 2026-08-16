@@ -1,94 +1,91 @@
 from rich.text import Text
 from textual.app import ComposeResult
-from textual.widgets import DataTable, Button, Label
+from textual.widgets import DataTable, Label
 from textual.containers import Vertical
 
 from pulse.panels.base import Panel
 from pulse.container_api import ContainerController
 
+
 class DockerPanel(Panel):
+    """Docker container monitor.
+
+    Summary counts in the grid, full management in the full-screen view.
+    Container data arrives through the shared snapshot; the controller is only
+    used for the state-changing operations, which always confirm first.
     """
-    Docker Container Monitor Panel.
-    Shows summary stats in grid, full interactive management in Transcendence.
-    """
-    
+
     PANEL_NAME = "Docker"
-    
+
     BINDINGS = [
         ("r", "restart_container", "Restart"),
         ("k", "stop_container", "Stop/Kill"),
         ("s", "start_container", "Start"),
     ]
 
-    def __init__(self, **kwargs):
+    def __init__(self, controller=None, **kwargs):
         super().__init__("DOCKER", **kwargs)
-        # The controller does not touch the Docker socket until something asks
-        # it to - access to that socket is root-equivalent on the host.
-        self.controller = ContainerController()
-        self.containers = []
-        self.summary_stats = {"total": 0, "running": 0, "paused": 0, "stopped": 0}
+        # Does not touch the Docker socket until something asks it to - that
+        # socket is root-equivalent on the host.
+        self.controller = controller if controller is not None else ContainerController()
         self.table_widget = None
 
+    @property
+    def containers(self):
+        snapshot = self.snapshot
+        return snapshot.containers if snapshot else ()
+
+    # ------------------------------------------------------------------
+    # Summary view
+    # ------------------------------------------------------------------
     def update_data(self) -> None:
-        """Fetch latest container data."""
         if not self.controller.available:
             self.update(self.controller.status_text())
             self.border_title = "DOCKER [N/A]"
             return
 
-        if not self.controller.is_available():
+        if not self.controller.connected:
             self.update(self.controller.status_text())
             self.border_title = "DOCKER [OFFLINE]"
             return
 
-        self.containers = self.controller.get_containers()
-        
-        # Calculate summary
-        self.summary_stats = {"total": len(self.containers), "running": 0, "paused": 0, "stopped": 0}
-        for c in self.containers:
-            status = c["status"]
-            if status == "running":
-                self.summary_stats["running"] += 1
-            elif status == "paused":
-                self.summary_stats["paused"] += 1
-            else:
-                self.summary_stats["stopped"] += 1
-        
-        # Update Grid View (Text)
-        status_text = (
-            f"\n[bold green]● Running: {self.summary_stats['running']}[/]\n"
-            f"[bold yellow]● Paused:  {self.summary_stats['paused']}[/]\n"
-            f"[bold red]● Stopped: {self.summary_stats['stopped']}[/]\n\n"
-            f"[bold blue]Total: {self.summary_stats['total']}[/]")
-        self.update(status_text)
-        self.border_title = f"DOCKER [{self.summary_stats['running']}/{self.summary_stats['total']}]"
+        containers = self.containers
+        running = sum(1 for c in containers if c.status == "running")
+        paused = sum(1 for c in containers if c.status == "paused")
+        stopped = len(containers) - running - paused
 
-        # Update Transcendence Table if active
+        self.update(
+            f"\n[bold green]● Running: {running}[/]\n"
+            f"[bold yellow]● Paused:  {paused}[/]\n"
+            f"[bold red]● Stopped: {stopped}[/]\n\n"
+            f"[bold blue]Total: {len(containers)}[/]"
+        )
+        self.border_title = f"DOCKER [{running}/{len(containers)}]"
+
         if self.table_widget:
             self._refresh_table()
 
     def get_detailed_view(self) -> Text:
-        """Textual detail view for the main panel (sidebar preview)."""
+        """Sidebar preview."""
         if not self.controller.connected:
             return Text(self.controller.status_text(), style="red")
 
-
+        containers = self.containers
         text = Text()
         text.append("CONTAINERS\n", style="bold underline")
-        for c in self.containers[:10]: # Limit to 10 for preview
-            color = "green" if c["status"] == "running" else "red"
-            text.append(f"• {c['name'][:20]:<20} ", style=color)
-            text.append(f"[{c['status']}]\n", style="dim")
-        
-        if len(self.containers) > 10:
-            text.append(f"...and {len(self.containers)-10} more", style="italic")
-            
+        for container in containers[:10]:
+            color = "green" if container.status == "running" else "red"
+            text.append(f"• {container.name[:20]:<20} ", style=color)
+            text.append(f"[{container.status}]\n", style="dim")
+
+        if len(containers) > 10:
+            text.append(f"...and {len(containers) - 10} more", style="italic")
+
         return text
 
-    # =========================================================================
-    # TRANSCENDENCE (IMMERSIVE MODE)
-    # =========================================================================
-    
+    # ------------------------------------------------------------------
+    # Transcendence
+    # ------------------------------------------------------------------
     def compose_transcendence(self) -> ComposeResult:
         """Compose the interactive full-screen view."""
         # First point where the user has actually asked to manage containers,
@@ -99,42 +96,54 @@ class DockerPanel(Panel):
             return
 
         with Vertical(id="docker-transcendence"):
-            yield Label("[b]Container Operations:[/b] [green]Start (S)[/] | [red]Stop (K)[/] | [yellow]Restart (R)[/]", classes="header-section")
-            
+            yield Label(
+                "[b]Container Operations:[/b] [green]Start (S)[/] | "
+                "[red]Stop (K)[/] | [yellow]Restart (R)[/]",
+                classes="header-section",
+            )
+
             self.table_widget = DataTable(cursor_type="row")
             self.table_widget.add_columns("ID", "Name", "Image", "Status", "State")
             yield self.table_widget
 
     def _refresh_table(self):
-        """Update the data table without losing selection."""
-        if not self.table_widget: return
+        """Update the table in place so the selected row does not jump."""
+        table = self.table_widget
+        if not table:
+            return
 
-        # Store selection
-        cursor_row = self.table_widget.cursor_row
-        
-        self.table_widget.clear()
-        
-        # Re-populate
-        for c in self.containers:
-            # Colorize status
-            status_style = "green" if c["status"] == "running" else "red" if c["status"] == "exited" else "yellow"
-            status_cell = Text(c["status"], style=status_style)
-            
-            self.table_widget.add_row(
-                c["id"],
-                c["name"],
-                c["image"],
-                status_cell,
-                c["state"],
-                key=c["id"]  # Use ID as row key
+        column_keys = list(table.columns.keys())
+        current_rows = set(table.rows.keys())
+        seen = set()
+
+        for container in self.containers:
+            seen.add(container.id)
+            style = (
+                "green" if container.status == "running"
+                else "red" if container.status == "exited"
+                else "yellow"
             )
-        
-        # Restore selection if possible
-        if cursor_row < len(self.containers):
-            self.table_widget.move_cursor(row=cursor_row)
+            row = [
+                container.id,
+                container.name,
+                container.image,
+                Text(container.status, style=style),
+                container.state,
+            ]
 
+            if container.id in current_rows:
+                for index, value in enumerate(row):
+                    table.update_cell(container.id, column_keys[index], value)
+            else:
+                table.add_row(*row, key=container.id)
+
+        for stale in current_rows - seen:
+            table.remove_row(stale)
+
+    # ------------------------------------------------------------------
+    # Actions
+    # ------------------------------------------------------------------
     def _get_selected_id(self):
-        """Helper to get currently selected ID from table."""
         if not self.table_widget:
             return None
         try:
@@ -146,8 +155,8 @@ class DockerPanel(Panel):
 
     def _container_name(self, container_id: str) -> str:
         for container in self.containers:
-            if container["id"] == container_id:
-                return f"{container['name']} ({container_id})"
+            if container.id == container_id:
+                return f"{container.name} ({container_id})"
         return container_id
 
     def _request(self, operation: str) -> None:
@@ -156,7 +165,7 @@ class DockerPanel(Panel):
 
         def run():
             result = getattr(self.controller, f"{operation}_container")(container_id)
-            self.update_data()
+            self.app.refresh_data()
             return result
 
         self.request_container_action(

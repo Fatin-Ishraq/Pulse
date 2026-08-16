@@ -1,4 +1,3 @@
-import psutil
 from rich.text import Text
 
 from pulse.panels.base import Panel
@@ -8,11 +7,14 @@ from textual.widgets import DataTable, Static, Button
 from textual.containers import Container, Horizontal
 from textual.binding import Binding
 
-from pulse import core
+# How far the memory percentage is stretched before colouring it. A process at
+# 20% of RAM is already notable, so the heat scale is compressed.
+MEM_HEAT_SCALE = 5
+
 
 class ProcessPanel(Panel):
     """Process list showing top consumers (CPU/MEM)."""
-    
+
     PANEL_NAME = "PROCESSES"
     BINDINGS = [
         ("c", "sort('cpu')", "Sort CPU"),
@@ -21,63 +23,36 @@ class ProcessPanel(Panel):
         Binding("plus", "renice_up", "Nice +", priority=True),
         Binding("minus", "renice_down", "Nice -", priority=True),
     ]
-    
+
     def __init__(self):
         super().__init__("TOP PROCS", "", id="process-panel")
-        self.last_procs = []
-        self.sort_key = 'cpu'  # or 'mem'
-        # Transcendence Control States
-        self.sampling_rate = 2.0  # Slower default for processes
-        self.view_mode = "developer" # cinematic / developer
-        self.selected_pid = None
-        
-        core.init()
+        self.sort_key = "cpu"  # or 'mem'
+        self.sampling_rate = 2.0
+        self.view_mode = "developer"
 
-    def compose_transcendence(self):
-        """Interactive Process Management Matrix."""
-        with Container(id="proc-transcendence-layout"):
-            # Top: Hero Stats
-            with Horizontal(classes="header-section"):
-                yield Static(id="proc-hero-header")
-            
-            # Middle: Interactive Table
-            yield DataTable(id="proc_table", cursor_type="row", zebra_stripes=True)
-            
-            # Bottom: Actions
-            with Horizontal(classes="footer-section", id="proc-actions"):
-                yield Button("KILL [K]", id="btn_kill", variant="error")
-                yield Button("SORT CPU [C]", id="btn_sort_cpu", variant="primary")
-                yield Button("SORT MEM [M]", id="btn_sort_mem", variant="default")
-                yield Button("REFRESH [R]", id="btn_refresh", variant="warning")
-
-    def on_button_pressed(self, event: Button.Pressed) -> None:
-        if event.button.id == "btn_kill":
-            self.action_kill_process()
-        elif event.button.id == "btn_sort_cpu":
-            self.action_sort("cpu")
-        elif event.button.id == "btn_sort_mem":
-            self.action_sort("mem")
-        elif event.button.id == "btn_refresh":
-            self.action_refresh_stats()
-
-    def action_refresh_stats(self):
+    # ------------------------------------------------------------------
+    # Actions
+    # ------------------------------------------------------------------
+    def action_sort(self, mode: str):
+        """Sort the process list."""
+        self.sort_key = mode
         self.update_data()
-        self.refresh_content(force=True)
+        self.notify(f"Sorting by {mode.upper()}")
 
     def action_kill_process(self):
         """Terminate the process under the cursor, after confirmation."""
         pid = self._selected_pid()
-        if pid is None:
-            return
-        self.request_kill(pid)
+        if pid is not None:
+            self.request_kill(pid)
 
     def action_renice_up(self):
-        """Increase nice value (lower priority)."""
         self.request_renice(self._selected_pid(), 1)
 
     def action_renice_down(self):
-        """Decrease nice value (higher priority)."""
         self.request_renice(self._selected_pid(), -1)
+
+    def action_refresh_stats(self):
+        self.app.refresh_data()
 
     def _selected_pid(self):
         """PID under the table cursor, or None with a message explaining why not."""
@@ -99,249 +74,181 @@ class ProcessPanel(Panel):
             self.notify("Could not identify the selected process.", severity="error")
             return None
 
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "btn_kill":
+            self.action_kill_process()
+        elif event.button.id == "btn_sort_cpu":
+            self.action_sort("cpu")
+        elif event.button.id == "btn_sort_mem":
+            self.action_sort("mem")
+        elif event.button.id == "btn_refresh":
+            self.action_refresh_stats()
+
+    # ------------------------------------------------------------------
+    # Summary view
+    # ------------------------------------------------------------------
+    def update_data(self):
+        snapshot = self.snapshot
+        if snapshot is None:
+            self.update(self.waiting_text())
+            return
+
+        text = Text()
+        text.append(f"Sorted by {self.sort_key.upper()}\n", style="dim")
+
+        total_memory = snapshot.memory.total
+        for process in snapshot.top_processes(self.sort_key, limit=4):
+            if self.sort_key == "cpu":
+                value = process.cpu_percent
+                color = value_to_heat_color(value)
+                threshold = 10
+            else:
+                value = process.memory_percent(total_memory)
+                color = value_to_heat_color(value * MEM_HEAT_SCALE)
+                threshold = 5
+
+            text.append("★ " if value > threshold else "· ", style=color)
+            text.append(f"{process.name[:8]:<8} {value:4.1f}%\n", style="dim")
+
+        self.update(text)
+
+    # ------------------------------------------------------------------
+    # Transcendence
+    # ------------------------------------------------------------------
+    def compose_transcendence(self):
+        """Interactive Process Management Matrix."""
+        with Container(id="proc-transcendence-layout"):
+            with Horizontal(classes="header-section"):
+                yield Static(id="proc-hero-header")
+
+            yield DataTable(id="proc_table", cursor_type="row", zebra_stripes=True)
+
+            with Horizontal(classes="footer-section", id="proc-actions"):
+                yield Button("KILL [K]", id="btn_kill", variant="error")
+                yield Button("SORT CPU [C]", id="btn_sort_cpu", variant="primary")
+                yield Button("SORT MEM [M]", id="btn_sort_mem", variant="default")
+                yield Button("REFRESH [R]", id="btn_refresh", variant="warning")
+
     def update_transcendence(self, screen):
-        """Update the DataTable efficiently with rich visualization matching NetworkPanel."""
+        """Update the process table, preserving the user's cursor position."""
+        snapshot = self.snapshot
+        if snapshot is None:
+            return
+
         table = screen.query_one("#proc_table", DataTable)
         header = screen.query_one("#proc-hero-header", Static)
-        
-        # Init columns if needed
+
         if not table.columns:
             table.add_columns("PID", "NAME", "CPU %", "MEM %", "USER", "STATUS")
-        
-        # Fetch data
-        procs = core.get_process_list(sort_by=self.sort_key, limit=100)
-        
-        # --- Update Header (Strictly Replicating Network Design) ---
-        # Calculate System Globals
-        sys_cpu = psutil.cpu_percent()
-        mem_info = core.get_memory_info()
-        sys_mem_pct = mem_info['percent'] if mem_info else 0
-        proc_count = len(procs)
-        
-        head = Text()
-        # CPU Block (Green) -> Replicating "Upload" style
-        head.append(f" ⚡ {sys_cpu:5.1f}%   ", style="bold green")
-        head.append(make_bar(sys_cpu, 100, 15), style="green")
-        
-        # MEM Block (Blue) -> Replicating "Download" style
-        head.append(f"   💾 {sys_mem_pct:5.1f}%   ", style="bold blue")
-        head.append(make_bar(sys_mem_pct, 100, 15), style="blue")
-        
-        # Stats Block -> Replicating "INTERFACES" style
-        head.append(f"   ACTIVE TASKS: {proc_count}", style="dim")
-        
-        header.update(head)
-        
-        # --- Update Table ---
-        
-        # Save selection
-        old_cursor_key = None
-        if table.cursor_row is not None:
-             try:
-                 old_cursor_key = table.coordinate_to_cell_key(table.cursor_coordinate).row_key
-             except: pass
-        
-        old_scroll_y = table.scroll_y
-        
-        table.clear()
-        
-        for p in procs:
-            pid = p['pid']
-            pid_key = str(pid)
-            
-            # Format Data
-            name = p['name']
-            cpu = p['cpu_percent']
-            mem_total = mem_info['total'] if mem_info else 1
-            mem_pct = (p['memory_info'] / mem_total * 100)
-            
-            # Colors
-            cpu_style = value_to_heat_color(cpu)
-            mem_style = value_to_heat_color(mem_pct * 5)
-            
-            # Fetch details
-            user = "?"
-            status = "?"
-            try:
-                proc = psutil.Process(pid)
-                user = proc.username()
-                if "\\" in user: user = user.split("\\")[1]
-                status = proc.status()
-            except:
-                pass
-            
-            row_data = [
-                str(pid),
-                name,
-                Text(f"{cpu:5.1f}", style=cpu_style),
-                Text(f"{mem_pct:5.1f}", style=mem_style),
-                Text(user[:10], style="dim"),
-                Text(status[:10], style="dim")
-            ]
-            
-            table.add_row(*row_data, key=pid_key)
-        
-        # Restore selection
-        if old_cursor_key:
-            try:
-                new_idx = table.get_row_index(old_cursor_key)
-                table.move_cursor(row=new_idx)
-                table.scroll_y = old_scroll_y
-            except:
-                pass
-    
-    def get_transcendence_view(self) -> Text:
-        """Ultimate Process Flow Analytics."""
-        text = Text()
-        text.append(f"PROCESS INFUSION ", style="bold")
-        text.append(f"[{self.view_mode.upper()} MODE] ", style="cyan")
-        text.append(f"SORT: {self.sort_key.upper()}\n", style="dim")
-        
-        if not self.last_procs:
-            return Text("Initializing process telemetry...")
 
-        if self.view_mode == "cinematic":
-            # Cinematic: Visual dominance
-            text.append("\nHIGH-CONSUMPTION LANDSCAPE\n", style="cyan")
-            for p in self.last_procs[:15]:
-                val = p[self.sort_key]
-                color = value_to_heat_color(val if self.sort_key == 'cpu' else val * 5)
-                text.append(f"{p['name'][:15]:<15} ", style="cyan")
-                text.append(make_bar(val if self.sort_key == 'cpu' else val*5, 100, 30), style=color)
-                text.append(f" {val:>4.1f}% ", style=color)
-                text.append(f"PID: {p['pid']}\n", style="dim")
-        else:
-            # Developer Mode: Detailed Statistics
-            text.append("\nPROCESS REGISTRY DEPTH\n", style="cyan")
-            text.append(f"{'PID':<7} {'CPU%':<7} {'MEM%':<7} {'THREADS':<8} {'USER':<12} {'NAME'}\n", style="dim")
-            text.append("─" * 80 + "\n", style="dim")
-            
-            for p in self.last_procs[:25]:
-                try:
-                    proc = psutil.Process(p['pid'])
-                    # Supplemental data for dev mode
-                    threads = proc.num_threads()
-                    username = proc.username()[:12]
-                    
-                    cpu_c = value_to_heat_color(p['cpu'])
-                    mem_c = value_to_heat_color(p['mem'] * 5)
-                    
-                    text.append(f"{p['pid']:<7}", style="dim")
-                    text.append(f"{p['cpu']:>5.1f}% ", style=cpu_c)
-                    text.append(f"{p['mem']:>5.1f}% ", style=mem_c)
-                    text.append(f"{threads:<8}", style="dim")
-                    text.append(f"{username:<12}", style="dim")
-                    text.append(f"{p['name']}\n", style="yellow")
-                except:
-                    # Fallback to last_procs data if pid vanished
-                    text.append(f"{p['pid']:<7} {p['cpu']:>5.1f}% {p['mem']:>5.1f}% {'?':<8} {'?':<12} {p['name']}\n", style="dim")
-            
-            # Status Matrix
-            text.append("\nSYSTEM STATE DISTRIBUTION\n", style="cyan")
-            counts = {'running': 0, 'sleeping': 0, 'idle': 0, 'other': 0}
-            for p in psutil.process_iter(['status']):
-                s = p.info['status']
-                if s in counts: counts[s] += 1
-                else: counts['other'] += 1
-            
-            for s, c in counts.items():
-                text.append(f"  {s.upper():<10}: {c:>4}  ", style="dim")
-                text.append("█" * (c // 20) + "░" * (10 - (c // 20)) + "\n", style="cyan")
-                
+        total_memory = snapshot.memory.total
+        processes = snapshot.top_processes(self.sort_key, limit=100)
+
+        head = Text()
+        cpu = snapshot.cpu.percent
+        head.append(f" ⚡ {cpu:5.1f}%   ", style="bold green")
+        head.append(make_bar(cpu, 100, 15), style="green")
+        memory = snapshot.memory.percent
+        head.append(f"   💾 {memory:5.1f}%   ", style="bold blue")
+        head.append(make_bar(memory, 100, 15), style="blue")
+        head.append(f"   ACTIVE TASKS: {len(snapshot.processes)}", style="dim")
+        header.update(head)
+
+        # Rows are updated in place and only added or removed on change, so a
+        # scrolled, selected row stays put instead of being rebuilt each tick.
+        column_keys = list(table.columns.keys())
+        current_rows = set(table.rows.keys())
+        seen = set()
+
+        for process in processes:
+            key = str(process.pid)
+            seen.add(key)
+
+            memory_percent = process.memory_percent(total_memory)
+            row = [
+                key,
+                process.name,
+                Text(f"{process.cpu_percent:5.1f}",
+                     style=value_to_heat_color(process.cpu_percent)),
+                Text(f"{memory_percent:5.1f}",
+                     style=value_to_heat_color(memory_percent * MEM_HEAT_SCALE)),
+                Text(process.username[:10], style="dim"),
+                Text(process.status[:10], style="dim"),
+            ]
+
+            if key in current_rows:
+                for index, value in enumerate(row):
+                    table.update_cell(key, column_keys[index], value)
+            else:
+                table.add_row(*row, key=key)
+
+        for stale in current_rows - seen:
+            table.remove_row(stale)
+
+    def get_transcendence_view(self) -> Text:
+        """Text fallback for the full-screen view."""
+        snapshot = self.snapshot
+        if snapshot is None:
+            return self.waiting_text()
+
+        total_memory = snapshot.memory.total
+
+        text = Text()
+        text.append("PROCESS INFUSION ", style="bold")
+        text.append(f"SORT: {self.sort_key.upper()}\n", style="dim")
+
+        text.append("\nHIGH-CONSUMPTION LANDSCAPE\n", style="cyan")
+        for process in snapshot.top_processes(self.sort_key, limit=15):
+            if self.sort_key == "cpu":
+                value = process.cpu_percent
+                scaled = value
+            else:
+                value = process.memory_percent(total_memory)
+                scaled = value * MEM_HEAT_SCALE
+
+            color = value_to_heat_color(scaled)
+            text.append(f"{process.name[:15]:<15} ", style="cyan")
+            text.append(make_bar(min(scaled, 100), 100, 30), style=color)
+            text.append(f" {value:>4.1f}% ", style=color)
+            text.append(f"PID: {process.pid}\n", style="dim")
+
+        text.append("\nSTATE DISTRIBUTION\n", style="cyan")
+        counts = {}
+        for process in snapshot.processes:
+            counts[process.status] = counts.get(process.status, 0) + 1
+        for status, count in sorted(counts.items(), key=lambda item: -item[1]):
+            text.append(f"  {status.upper():<10}: {count:>4}  ", style="dim")
+            filled = min(10, count // 20)
+            text.append("█" * filled + "░" * (10 - filled) + "\n", style="cyan")
+
         return text
 
-    def action_sort(self, mode: str):
-        """Sort the process list."""
-        self.sort_key = mode
-        self.refresh_content()
-        # Visual feedback
-        self.notify(f"Sorting by {mode.upper()}")
-        
-    def update_data(self):
-        procs = []
-        
-        # Get process list from Direct OS engine
-        process_data = core.get_process_list(sort_by=self.sort_key, limit=60)
-        
-        # Get total memory for percentage calculation
-        mem_info = core.get_memory_info()
-        total_mem = mem_info.get('total', 1) if mem_info else 1
-        
-        for p in process_data:
-            cpu = p.get('cpu_percent', 0)
-            mem_bytes = p.get('memory_info', 0)
-            mem = (mem_bytes / total_mem) * 100 if total_mem else 0
-            
-            if cpu < 0.1 and mem < 0.1:
-                continue
-                
-            procs.append({
-                'name': p.get('name', '?'),
-                'cpu': cpu,
-                'mem': mem,
-                'pid': p.get('pid', 0)
-            })
-        
-        # Sort based on current mode
-        procs.sort(key=lambda x: x[self.sort_key], reverse=True)
-        self.last_procs = procs[:50]
-        top = procs[:4]
-        
-        self.render_panel(top)
-        
-    def render_panel(self, top_procs):
-        text = Text()
-        
-        # Header indicating sort mode
-        sort_label = "CPU" if self.sort_key == 'cpu' else "MEM"
-        text.append(f"Sorted by {sort_label}\n", style="dim")
-        
-        for p in top_procs:
-            # Choose color based on the active sort metric
-            val = p[self.sort_key]
-            color = value_to_heat_color(val if self.sort_key == 'cpu' else val * 3) # fast hack scaling for mem
-            
-            star = "★" if val > (10 if self.sort_key == 'cpu' else 5) else "·"
-            text.append(f"{star} ", style=color)
-            
-            name = p['name'][:8]
-            val_fmt = f"{val:4.1f}%"
-            text.append(f"{name:<8} {val_fmt}\n", style="dim")
-        
-        self.update(text)
-        
-    def refresh_content(self, force=False):
-        """Force a re-render with sorted data (called on keypress)."""
-        if force or hasattr(self.app.screen, "query_one"):
-             try:
-                 self.update_transcendence(self.app.screen)
-             except: pass
-        self.update_data()
-    
+    # ------------------------------------------------------------------
+    # Detail view
+    # ------------------------------------------------------------------
     def get_detailed_view(self) -> Text:
         """Detailed process table."""
+        snapshot = self.snapshot
+        if snapshot is None:
+            return self.waiting_text()
+
+        total_memory = snapshot.memory.total
+
         text = Text()
         text.append("⭐ TOP PROCESSES\n\n", style="bold")
-        
-        sort_mode = "CPU" if self.sort_key == 'cpu' else "MEMORY"
-        hint = "[C] Sort CPU  [M] Sort Memory"
-        text.append(f"Sorted by: {sort_mode}   ", style="cyan")
-        text.append(f"{hint}\n\n", style="dim")
-        
+        text.append(f"Sorted by: {self.sort_key.upper()}   ", style="cyan")
+        text.append("[C] Sort CPU  [M] Sort Memory\n\n", style="dim")
+
         text.append("PID      CPU%   MEM%   NAME\n", style="yellow")
         text.append("─" * 40 + "\n", style="dim")
-        
-        for p in self.last_procs:
-            cpu_val = p['cpu']
-            mem_val = p['mem']
-            
-            # fast scaling for heatmap colors
-            cpu_color = value_to_heat_color(cpu_val)
-            mem_color = value_to_heat_color(mem_val * 4) 
-            
-            text.append(f"{p['pid']:<8}", style="dim")
-            text.append(f"{cpu_val:5.1f}%  ", style=cpu_color)
-            text.append(f"{mem_val:5.1f}%  ", style=mem_color)
-            text.append(f"{p['name']}\n")
-        
+
+        for process in snapshot.top_processes(self.sort_key, limit=20):
+            memory_percent = process.memory_percent(total_memory)
+            text.append(f"{process.pid:<8}", style="dim")
+            text.append(f"{process.cpu_percent:5.1f}%  ",
+                        style=value_to_heat_color(process.cpu_percent))
+            text.append(f"{memory_percent:5.1f}%  ",
+                        style=value_to_heat_color(memory_percent * MEM_HEAT_SCALE))
+            text.append(f"{process.name}\n")
+
         return text

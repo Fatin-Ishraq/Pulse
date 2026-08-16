@@ -6,8 +6,7 @@ and system metrics to produce animated ASCII frames.
 """
 import time
 import math
-import psutil
-from typing import Optional
+from typing import Iterable, Optional
 from collections import deque
 
 from pulse.aether.shapes import (
@@ -79,49 +78,34 @@ class AetherEngine:
         self.terrain = TerrainRenderer(width, height)
         self.flux = FluxRenderer(width, height)
     
-    def _get_metrics(self) -> dict:
-        """Fetch current system metrics."""
-        try:
-            cpu = psutil.cpu_percent()
-            mem = psutil.virtual_memory().percent
-            
-            # Cache for HUD
-            self._current_cpu = cpu
-            self._current_mem = mem
-            
-            # Store history
+    def set_metrics(self, cpu: float, memory: float, io_intensity: float,
+                    cpu_history: Optional[Iterable[float]] = None) -> None:
+        """Feed the engine the current tick.
+
+        The engine is pure animation - it does not sample anything. Metrics are
+        pushed in from the shared snapshot so the visualisation stays in step
+        with the rest of the UI and adds no syscalls of its own.
+        """
+        self._current_cpu = cpu
+        self._current_mem = memory
+        self.io_intensity = max(0.0, min(1.0, io_intensity))
+        self._current_io = self.io_intensity
+
+        if cpu_history is not None:
+            # Terrain is driven by the store's history rather than a private copy.
+            self.cpu_history = deque(cpu_history, maxlen=60)
+        else:
             self.cpu_history.append(cpu)
-            self.mem_history.append(mem)
-            
-            # Calculate I/O intensity for Flux
-            try:
-                net = psutil.net_io_counters()
-                disk = psutil.disk_io_counters()
-                
-                if self._last_net_io and self._last_disk_io:
-                    net_delta = (net.bytes_sent - self._last_net_io.bytes_sent +
-                                 net.bytes_recv - self._last_net_io.bytes_recv)
-                    disk_delta = (disk.read_bytes - self._last_disk_io.read_bytes +
-                                  disk.write_bytes - self._last_disk_io.write_bytes)
-                    
-                    io_total = net_delta + disk_delta
-                    self.io_intensity = min(1.0, io_total / (50 * 1024 * 1024))
-                    self._current_io = self.io_intensity
-                
-                self._last_net_io = net
-                self._last_disk_io = disk
-            except Exception:
-                self.io_intensity = 0.0
-            
-            return {
-                'cpu': cpu,
-                'mem': mem,
-                'cpu_intensity': cpu / 100.0,
-                'mem_intensity': mem / 100.0,
-                'io_intensity': self.io_intensity,
-            }
-        except Exception:
-            return {'cpu': 0, 'mem': 0, 'cpu_intensity': 0, 'mem_intensity': 0, 'io_intensity': 0}
+
+    def _get_metrics(self) -> dict:
+        """The most recently pushed metrics, in the form the renderer wants."""
+        return {
+            'cpu': self._current_cpu,
+            'mem': self._current_mem,
+            'cpu_intensity': self._current_cpu / 100.0,
+            'mem_intensity': self._current_mem / 100.0,
+            'io_intensity': self.io_intensity,
+        }
     
     def _draw_hud(self, metrics: dict):
         """Draw telemetry HUD overlays on the buffer."""

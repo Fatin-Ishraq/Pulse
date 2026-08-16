@@ -6,6 +6,8 @@ from textual.widgets import Static
 
 from pulse import core
 from pulse.actions import ActionResult
+from pulse.core.models import Snapshot
+from pulse.core.store import MetricStore
 from pulse.screens.confirm import (
     BlockedScreen,
     ConfirmScreen,
@@ -35,6 +37,34 @@ class Panel(Static, can_focus=True):
     def on_click(self) -> None:
         """Focus the panel when clicked."""
         self.focus()
+
+    # ------------------------------------------------------------------
+    # Metric access
+    #
+    # Panels read from the shared store; they never sample anything. That is
+    # what keeps every number on screen consistent within a tick, and keeps
+    # blocking system calls off the event loop.
+    # ------------------------------------------------------------------
+    @property
+    def store(self) -> MetricStore:
+        return self.app.store
+
+    @property
+    def snapshot(self) -> Optional[Snapshot]:
+        """The current tick, or None before the first sample lands."""
+        return self.app.store.snapshot
+
+    @property
+    def history(self):
+        return self.app.store.history
+
+    @property
+    def rates(self):
+        return self.app.store.rates
+
+    def waiting_text(self) -> Text:
+        """Placeholder shown until the first snapshot arrives."""
+        return Text("Acquiring telemetry...", style="dim")
 
     # ------------------------------------------------------------------
     # Guarded actions
