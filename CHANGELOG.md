@@ -5,6 +5,39 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **Metrics moved out of the widgets.** New `pulse.core` package: immutable
+  models, pluggable sources, a fault-isolating sampler, and a store that owns
+  history and derived rates. Nothing in it imports Textual or Rich.
+- **One tick now produces one `Snapshot` that every panel shares.** Previously
+  the CPU panel, Insight, the main view, and the process table each called
+  `cpu_percent()` separately in the same refresh, so four different CPU numbers
+  could be on screen at once.
+- **Sampling runs on a worker thread.** Reading `/proc`, walking the socket
+  table, and stat-ing mount points no longer block the render path. An
+  overrunning tick is skipped rather than queued behind itself.
+- **Rates are derived from real elapsed time** between two snapshots instead of
+  each panel tracking its own counters and assuming one second had passed.
+- **Tables update in place.** Rows are diffed rather than cleared and rebuilt
+  every tick, so a selected or scrolled row stays where the user put it.
+- A subsystem that fails to sample now degrades its own panel and is reported
+  in the Insight view, instead of being silently swallowed.
+- The Aether visualisation takes metrics from the shared snapshot rather than
+  sampling psutil at 20 FPS on its own.
+
+### Added
+
+- `MockSource`, a deterministic fake machine. The entire UI can be driven from
+  it with no real system access, which is what makes the new integration tests
+  possible.
+- Architectural tests that parse imports and fail if a panel reaches for psutil
+  or subprocess, or if `pulse.core` imports a UI library.
+- Test count 94 -> 199; total coverage 39% -> 73%; CI floor raised to 65% with
+  a dedicated 90% gate on `pulse.core`.
+
 ## [0.4.0] - 2026-08-17
 
 A correctness and safety release. No new features; several things that looked

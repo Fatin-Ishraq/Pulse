@@ -20,6 +20,10 @@ from textual.app import App, SystemCommand
 from textual.containers import Container, Vertical
 from textual.screen import Screen
 from textual.widgets import Header, Footer
+from textual.worker import Worker
+
+from pulse.container_api import ContainerController
+from pulse.core import MetricStore, Sampler, SystemSource
 
 
 
@@ -256,9 +260,18 @@ class PulseApp(App):
                     continue
             yield cmd
     
-    def __init__(self):
+    def __init__(self, source=None):
         super().__init__()
         self.frozen = False
+
+        # One store, one sampler. Panels read the store; nothing else samples.
+        # `source` is injectable so tests can drive the UI from a MockSource.
+        self.container_controller = ContainerController()
+        self.store = MetricStore()
+        self.sampler = Sampler(
+            source if source is not None
+            else SystemSource(self.container_controller)
+        )
 
         # Load Config (already validated - see pulse.config)
         self.config = load_config()
@@ -288,7 +301,8 @@ class PulseApp(App):
             # Right Sidebar (3 widgets)
             with Vertical(id="sidebar-right"):
                 yield NetworkPanel()
-                yield DockerPanel(id="docker-panel")
+                yield DockerPanel(controller=self.container_controller,
+                                  id="docker-panel")
                 yield InsightPanel()
         yield Footer()
     
@@ -296,10 +310,14 @@ class PulseApp(App):
         """Start the update timer."""
         # Push boot screen immediately
         self.push_screen(BootScreen())
-        
+
         # Apply initial theme
         self.apply_theme()
-        
+
+        # Priming warms the delta-based counters, so the first visible reading
+        # is a real measurement rather than a zero.
+        self.sampler.prime()
+
         refresh_rate = validate_refresh_rate(
             self.config.get("core", {}).get("refresh_rate")
         )
@@ -340,19 +358,47 @@ class PulseApp(App):
         pass
     
     def refresh_data(self):
-        """Refresh all panels."""
+        """Kick off a sampling tick.
+
+        Sampling happens on a worker thread: reading /proc, walking the socket
+        table and stat-ing mount points are all slow enough to stutter the UI
+        if done on the event loop. `exclusive` means a tick that overruns its
+        interval is skipped rather than queued behind itself.
+        """
         if self.frozen:
             return
-        self.query_one("#cpu-panel", CPUPanel).update_data()
-        self.query_one("#memory-panel", MemoryPanel).update_data()
-        self.query_one("#net-panel", NetworkPanel).update_data()
-        self.query_one("#disk-panel", DiskIOPanel).update_data()
-        self.query_one("#storage-panel", StoragePanel).update_data()
-        self.query_one("#docker-panel", DockerPanel).update_data()
-        self.query_one("#process-panel", ProcessPanel).update_data()
-        self.query_one("#main-panel", MainViewPanel).update_data()
-        self.query_one("#insight-panel", InsightPanel).update_data()
-    
+        self._sample_metrics()
+
+    def _sample_metrics(self) -> Worker:
+        """Sample off the event loop, then hand the result back to the UI."""
+        return self.run_worker(
+            self._sample_and_apply,
+            name="sampler",
+            group="sampler",
+            thread=True,
+            exclusive=True,
+        )
+
+    def _sample_and_apply(self) -> None:
+        """Worker body. Runs on a thread - must not touch widgets directly."""
+        snapshot = self.sampler.sample()
+        self.call_from_thread(self.apply_snapshot, snapshot)
+
+    def apply_snapshot(self, snapshot) -> None:
+        """Publish a snapshot and repaint. Runs on the event loop."""
+        self.store.push(snapshot)
+        self.refresh_panels()
+
+    def refresh_panels(self) -> None:
+        """Repaint every panel from the current store contents."""
+        for panel in self.query(Panel):
+            try:
+                panel.update_data()
+            except Exception as exc:  # noqa: BLE001
+                # One panel failing to render must not stop the others.
+                self.log.warning(f"{type(panel).__name__} failed to render: {exc}")
+
+
     
     def action_cycle_theme(self):
         """Cycle through available themes."""
@@ -365,7 +411,8 @@ class PulseApp(App):
             self.notify("Theme applied, but the preference could not be saved.",
                         severity="warning")
 
-        self.refresh_data()  # Refresh to show visual updates immediately
+        # Repaint from the store; a theme change needs no new measurements.
+        self.refresh_panels()
     
     def action_freeze(self):
         """Toggle freeze state."""

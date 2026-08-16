@@ -15,7 +15,11 @@ Hatchling.
 ```
 src/pulse/
 ├── app.py            # PulseApp, the grid layout, global bindings, main()
-├── core.py           # re-exports: metrics from direct_os, actions from actions
+├── core/             # metrics layer - NO Textual or Rich imports
+│   ├── models.py     # frozen dataclasses; one tick is one Snapshot
+│   ├── sources/      # system.py (real), mock.py (deterministic)
+│   ├── sampler.py    # one source poll -> one Snapshot, failures isolated
+│   └── store.py      # latest Snapshot + history, rates, peaks
 ├── direct_os.py      # per-platform metrics; /proc on Linux, psutil elsewhere
 ├── actions.py        # the ONLY module that changes system state
 ├── config.py         # load/save + validation of config.toml
@@ -48,13 +52,26 @@ here means the UI shows stale or wrong numbers with no way to find out why.
 **Config values are untrusted input.** Anything read from `config.toml` goes
 through `config.validate_*` before use.
 
+**Panels never sample.** Read from `self.snapshot`, `self.history`,
+`self.rates`, or `self.store` on `Panel`. One tick produces one `Snapshot` that
+every widget shares, which is why the numbers agree across the UI. Sampling
+runs on a worker thread; a panel that calls psutil puts a blocking syscall back
+on the render path. `tests/test_ui_isolation.py` enforces this — it parses the
+imports of everything under `panels/`, `screens/`, and `aether/` and fails if
+psutil or subprocess appears.
+
+**Guard against `None`.** `self.snapshot` is `None` until the first sample
+lands. Return `self.waiting_text()` rather than assuming data exists.
+
+**The dependency arrow points one way.** `pulse.core` must not import Textual
+or Rich; that is also enforced by a test.
+
 ## Known debt
 
-The panels call psutil directly from their render path — 80+ call sites — so
-one refresh samples the same metric several times and everything runs on the
-event loop. There are no workers. This is the main thing v2 fixes; see
-[pulse-v2-plan.md](pulse-v2-plan.md) for the target architecture. Prefer not to
-add new direct psutil calls in `panels/`.
+The full-screen views still probe panels with `hasattr` for eight optional
+methods instead of declaring an interface, and the keymap has collisions —
+`f` means three different things depending on focus, `r` means four. That is
+M3 in [pulse-v2-plan.md](pulse-v2-plan.md).
 
 ## Development
 

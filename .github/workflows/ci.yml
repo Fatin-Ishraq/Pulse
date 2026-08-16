@@ -33,7 +33,7 @@ jobs:
         pip install .[test]
 
     - name: Run tests with coverage
-      run: pytest --cov=pulse --cov-report=term-missing --cov-fail-under=35
+      run: pytest --cov=pulse --cov-report=term-missing --cov-fail-under=65
 
     - name: Enforce coverage on safety-critical modules
       # These decide whether a destructive action happens at all, so they are
@@ -42,6 +42,14 @@ jobs:
         pytest tests/test_actions.py tests/test_config.py
         --cov=pulse.actions --cov=pulse.config
         --cov-report=term-missing --cov-fail-under=85
+
+    - name: Enforce coverage on the core metrics layer
+      # The core runs entirely against a mock source, so there is no excuse
+      # for gaps here.
+      run: >-
+        pytest tests/test_core_models.py tests/test_core_sampler.py
+        tests/test_core_store.py tests/test_core_sources.py
+        --cov=pulse.core --cov-report=term-missing --cov-fail-under=90
 
   smoke:
     name: Installed package launches
